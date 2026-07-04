@@ -10,7 +10,7 @@ Rust (edition 2021). Tokio async runtime. Ratatui for TUI. Apache-2.0 license.
 ## Structure
 - `src/lib.rs` declares top-level `pub mod`. Sub-module `mod.rs` has only `pub mod` — no re-exports.
 - Full-path references: `crate::tools::nmap::NmapPort`. No barrel imports.
-- Flat modules, max 2 levels deep. Match `spec-mvp.md`.
+- Flat modules, max 2 levels deep. Match `docs/spec-mvp.md`.
 
 ## Style
 - Public fields, no getters/setters. `::new(...)` constructors.

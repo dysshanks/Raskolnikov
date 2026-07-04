@@ -9,7 +9,7 @@
 | File | Status | Purpose |
 |------|--------|---------|
 | `README.md` | Rewrite | Project overview, quick start, badges |
-| `CONTRIBUTING.md` | Create | Contribution guidelines per spec |
+| `docs/CONTRIBUTING.md` | Create | Contribution guidelines per spec |
 | `packaging/PKGBUILD` | Create | Arch Linux AUR package |
 | `packaging/raskolnikov.spec` | Create | RPM spec (optional stretch) |
 | `packaging/raskolnikov.deb.spec` | Create | .deb packaging config |
@@ -76,8 +76,8 @@ rsk
 ```
 
 ## Documentation
-- [SPEC.md](spec-mvp.md) — Full specification
-- [CONTRIBUTING.md](CONTRIBUTING.md) — How to contribute
+- [SPEC.md](docs/spec-mvp.md) — Full specification
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md) — How to contribute
 
 ## License
 Apache-2.0
@@ -213,7 +213,7 @@ Override the default AI provider for this session.
 
 ## Spec Compliance Checklist
 
-Run through every section of `spec-mvp.md` and verify:
+Run through every section of `docs/spec-mvp.md` and verify:
 
 | Spec Section | Verification |
 |-------------|-------------|

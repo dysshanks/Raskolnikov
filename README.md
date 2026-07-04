@@ -152,7 +152,7 @@ src/
   agent/             Agent shell, engagement context, prompt builder
 ```
 
-See `spec-mvp.md` for the full specification.
+See `docs/spec-mvp.md` for the full specification.
 
 ## License
 

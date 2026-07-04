@@ -16,7 +16,7 @@ Raskolnikov is a terminal-native, markdown-driven AI security operating environm
 - Each sub-module's `mod.rs` contains only `pub mod` declarations — no re-exports
 - Reference via full path: `crate::tools::nmap::NmapPort`
 - Flat within each module — no nesting beyond 2 levels
-- Module structure must match `spec-mvp.md` Project Structure section
+- Module structure must match `docs/spec-mvp.md` Project Structure section
 
 ## Code style
 - All struct fields are public — direct field access, no getters/setters
@@ -58,7 +58,7 @@ Raskolnikov is a terminal-native, markdown-driven AI security operating environm
 - Config merge: built-in defaults → config.toml → env vars → CLI flags
 
 ## Documentation
-- `spec-mvp.md` is the authoritative spec — keep in sync with implementation
+- `docs/spec-mvp.md` is the authoritative spec — keep in sync with implementation
 - Rustdoc `///` on public API items
 - `//` comments on non-trivial internal logic (why, not what)
 

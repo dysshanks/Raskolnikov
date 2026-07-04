@@ -1444,7 +1444,7 @@ Most valuable contributions for alpha:
 1. **System prompt tuning** — better agent behaviour on smaller local models
 1. **Wordlist path detection** — common paths across distros
 
-See `CONTRIBUTING.md` in the repository.
+See `docs/CONTRIBUTING.md` in the repository.
 
 -----
 
