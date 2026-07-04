@@ -45,7 +45,8 @@ sudo ln -s raskolnikov /usr/local/bin/rk
 
 Dependencies at build time: Rust 1.80+ with `rustfmt` and `clippy` components.
 Runtime dependencies: `nmap`, `gobuster` (or `ffuf`), `nikto`, `sqlmap` — each
-tool is optional; missing tools are reported at startup.
+tool is optional; missing tools are reported at startup. See
+`docs/TOOLS.md` for installation by distribution.
 
 ## Quick start
 
