@@ -1,0 +1,48 @@
+[package]
+name = "raskolnikov"
+version = "0.1.0"
+edition = "2021"
+description = "Terminal-native, markdown-driven AI security operating environment"
+license = "Apache-2.0"
+repository = "https://github.com/raskolnikov-security/raskolnikov"
+authors = ["Raskolnikov Security Team"]
+
+[[bin]]
+name = "raskolnikov"
+path = "src/main.rs"
+
+[[bin]]
+name = "rsk"
+path = "src/main.rs"
+
+[[bin]]
+name = "rk"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+ratatui = "0.26"
+crossterm = "0.27"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+quick-xml = { version = "0.31", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+thiserror = "1"
+async-trait = "0.1"
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"
+temp-env = "0.3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true

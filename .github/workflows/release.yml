@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build release
+      run: cargo build --release
+
+    - name: Create archive
+      run: |
+        mkdir -p dist
+        cp target/release/raskolnikov dist/
+        ln -s raskolnikov dist/rsk
+        ln -s raskolnikov dist/rk
+        cd dist
+        tar czf raskolnikov-${{ github.ref_name }}-x86_64-linux.tar.gz raskolnikov rsk rk
+
+    - name: Create .deb package
+      run: |
+        mkdir -p deb/usr/bin
+        cp target/release/raskolnikov deb/usr/bin/
+        ln -s raskolnikov deb/usr/bin/rsk
+        ln -s raskolnikov deb/usr/bin/rk
+        dpkg-deb --build deb raskolnikov_${{ github.ref_name }}_amd64.deb
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          dist/raskolnikov-${{ github.ref_name }}-x86_64-linux.tar.gz
+          raskolnikov_${{ github.ref_name }}_amd64.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

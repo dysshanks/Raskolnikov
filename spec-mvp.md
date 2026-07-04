@@ -115,6 +115,14 @@ The agent proposes; the human decides. This default is non-negotiable.
 
 -----
 
+## Disclaimer
+
+Raskolnikov is a tool for authorised security testing. Users are solely
+responsible for ensuring their use complies with all applicable laws.
+The developers assume no liability for misuse.
+
+-----
+
 ## Core Concept
 
 ### What this replaces
@@ -289,9 +297,76 @@ processed only after the current tool exits or is interrupted.
 
 -----
 
+## Agent Prompt
+
+The master prompt defines Raskolnikov's identity, rules, and available tools.
+It is injected as the system message on every conversation turn. Its structure
+is fixed for 0.1.0 and will become agent-customisable in 0.2.0.
+
+### Structure
+
+```
+You are Raskolnikov, a security agent running in a terminal.
+You are assisting a security operator with penetration testing.
+
+=== AVAILABLE TOOLS ===
+{tool_names}
+
+=== RULES ===
+1. Always explain your reasoning before proposing a tool.
+2. Always state the exact command you want to run in a code block.
+3. Never execute a tool without operator approval.
+4. Wait for "yes" or "go ahead" before proceeding.
+5. If the operator says "no" or changes direction, adapt.
+6. If you want to run a tool, end your message with " — run this?"
+
+=== CURRENT CONTEXT ===
+{ports, findings, session state}
+
+Respond naturally. Be concise but informative.
+```
+
+### Behaviour rules
+
+|Rule|Rationale|
+|----|---------|
+|Explain before acting|Operator must understand intent before approving|
+|Exact command in code block|Operator reviews flags and arguments before approval|
+|No auto-execution|Operator approval is always required in 0.1.0|
+|End tool proposals with " — run this?"|Clear, parseable signal that approval is needed|
+|Adapt on redirection|Operator may change focus mid-engagement at any time|
+|Keep responses concise|Operator is a terminal user — brevity is respect|
+
+### Context injection
+
+On each turn, the prompt is populated with:
+- **Available tools** — list of tools detected on startup (e.g. `nmap, gobuster, nikto, sqlmap`)
+- **Current findings** — ports, services, web paths, flags discovered so far
+- **Session state** — empty until findings are added
+
+The context section is regenerated every turn to reflect the latest
+engagement state. All past conversation history (operator messages, agent
+responses, tool output) is passed separately as the chat history — not
+embedded in the system prompt.
+
+### Design constraints
+
+- **No tool-specific instructions in the prompt.** Tools are described
+  by name only. The AI model is expected to know common security tools
+  from its training data. Tool-specific flag documentation is a 0.2.0
+  feature (Skills system).
+- **No operator identity or credentials.** The prompt must never contain
+  API keys, usernames, or session identifiers.
+- **Single persona.** The agent is always "Raskolnikov" in 0.1.0. Agent
+  switching arrives in 0.2.0.
+- **Prompt length** must stay under 1k tokens in 0.1.0. The conversation
+  history carries the weight of the engagement.
+
+-----
+
 ## Tool Integrations
 
-Alpha 0.1.0 supports exactly four tools. All must be installed on the operator’s system —
+Alpha 0.1.0 supports exactly four tools. All must be installed on the operator's system —
 Raskolnikov does not bundle them.
 
 ### Availability check

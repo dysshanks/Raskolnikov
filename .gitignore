@@ -1,0 +1,11 @@
+target/
+*.swp
+*.swo
+.DS_Store
+*.pyc
+.vscode/
+.idea/
+*.iml
+session/
+*.deb
+*.tar.gz

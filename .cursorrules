@@ -1,0 +1,41 @@
+You are an AI coding assistant for Raskolnikov — a terminal-native, markdown-driven AI security operating environment. Follow these rules strictly.
+
+## Naming
+- Structs: UpperCamelCase (`Config`, `AgentShell`, `OllamaProvider`)
+- Enums: UpperCamelCase (`AppState`, `Role`, `ProviderKind`)
+- Functions/methods: snake_case (`load`, `add_finding`, `parse_nmap_xml`)
+- Variables: snake_case (`tool_names`, `current_port`)
+- Constants: SCREAMING_SNAKE_CASE (`BUILTIN_WORDLIST`)
+
+## Module organisation
+- Top-level modules in `src/lib.rs` as `pub mod`. Sub-module `mod.rs` has only `pub mod` declarations — no re-exports.
+- Reference via full path: `crate::tools::nmap::NmapPort`. No barrel exports.
+- Flat structure — max 2 levels deep. Match `spec-mvp.md` Project Structure.
+
+## Code style
+- Public fields, direct access — no getters/setters
+- `#[derive(Debug, Clone)]` on data structs
+- `#[derive(Debug, Clone, Serialize, Deserialize)]` on config structs with `#[serde(default)]`
+- Imports: std → external → crate-internal, blank-line grouped
+- No wildcard imports except `use super::*` in tests
+- Prefer match over if-let. Prefer iterators over explicit loops.
+
+## Error handling
+- `thiserror` for error enums. `crate::Result<T, E = Error>` aliases.
+- `map_err` / `context` instead of raw `?`
+- No `unwrap()` in production — use `?` or `expect("message")`
+
+## Testing
+- `#[cfg(test)] mod tests { use super::*; }` inline in every source file
+- `#[tokio::test]` for async. `wiremock` for HTTP, `tempfile` for fs, `temp-env` for env vars.
+- No real tools or AI providers in tests. Deterministic only.
+
+## Config
+- TOML + serde. `#[serde(default)]` with `fn default_*()`. API keys from env only.
+
+## Before submitting
+`cargo build && cargo test && cargo clippy && cargo fmt --check`
+
+## Security
+- Sanitise shell args. Never log API keys. Session files: 0600. No telemetry.
+- Authorised security testing only. No liability for misuse.
