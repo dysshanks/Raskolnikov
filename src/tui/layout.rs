@@ -29,9 +29,8 @@ pub fn render(app: &App, frame: &mut Frame, chunks: Vec<Rect>) {
     render_input(app, frame, chunks[3]);
 }
 
-fn render_header(_app: &App, frame: &mut Frame, area: Rect) {
-    let model = "qwen3";
-    let header = format!(" RASKOLNIKOV  alpha {}  model: {}", VERSION, model);
+fn render_header(app: &App, frame: &mut Frame, area: Rect) {
+    let header = format!(" RASKOLNIKOV  alpha {}  model: {}", VERSION, app.model_name);
     let header_style = Style::default()
         .fg(Color::Cyan)
         .add_modifier(Modifier::BOLD);

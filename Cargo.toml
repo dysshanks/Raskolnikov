@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 description = "Terminal-native, markdown-driven AI security operating environment"
 license = "Apache-2.0"
-repository = "https://github.com/raskolnikov-security/raskolnikov"
 authors = ["Raskolnikov Security Team"]
 
 [[bin]]

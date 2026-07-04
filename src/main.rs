@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use raskolnikov::ai::Provider;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -82,26 +81,17 @@ async fn main() -> raskolnikov::config::Result<()> {
         Some(Commands::Config { action }) => handle_config(action),
         Some(Commands::Tools) => handle_tools(),
         None => {
-            let config = raskolnikov::config::load()?;
+            let mut config = raskolnikov::config::load()?;
             let _data_dir = raskolnikov::config::init_data_dirs()?;
 
-            let tools = raskolnikov::tools::check_all_tools();
-            for tool in &tools {
-                if tool.available {
-                    let ver = tool.version.as_deref().unwrap_or("?");
-                    eprintln!("  \u{2713} {} {}", tool.name, ver);
-                } else {
-                    eprintln!("  \u{2717} {}  (not found)", tool.name);
-                }
+            if let Some(model) = &args.model {
+                config.ai.model = model.clone();
+            }
+            if let Some(provider) = &args.provider {
+                config.ai.provider = provider.clone();
             }
 
-            if let Some(provider) = raskolnikov::ai::resolve_provider(&config) {
-                eprintln!("  \u{2713} {} — {}", provider.name(), config.ai.model);
-            } else {
-                eprintln!("  \u{2717} No AI provider available");
-            }
-
-            raskolnikov::tui::run().await;
+            raskolnikov::tui::run(config).await;
             Ok(())
         }
     }
@@ -171,10 +161,44 @@ fn handle_sessions(action: SessionsAction) -> raskolnikov::config::Result<()> {
         }
         SessionsAction::Prune { keep } => {
             let days = keep.unwrap_or(30);
-            println!(
-                "Pruning sessions older than {} days (not yet implemented).",
-                days
-            );
+            let dir = raskolnikov::config::data_dir().join("sessions");
+            if !dir.exists() {
+                println!("No sessions directory found.");
+                return Ok(());
+            }
+
+            let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+            let mut pruned = 0u32;
+
+            let entries: Vec<_> = std::fs::read_dir(&dir)
+                .map_err(|e| format!("Failed to read sessions: {}", e))?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .collect();
+
+            for entry in &entries {
+                let name = entry.file_name();
+                let name_str = name.to_string_lossy();
+                if let Ok(ts) =
+                    chrono::NaiveDateTime::parse_from_str(&name_str, "%Y-%m-%dT%H-%M-%S")
+                {
+                    let ts_utc = ts.and_utc();
+                    if ts_utc < cutoff && std::fs::remove_dir_all(entry.path()).is_ok() {
+                        pruned += 1;
+                    }
+                }
+            }
+
+            if pruned == 0 {
+                println!("No sessions older than {} days to prune.", days);
+            } else {
+                println!(
+                    "Pruned {} session{} older than {} days.",
+                    pruned,
+                    if pruned == 1 { "" } else { "s" },
+                    days
+                );
+            }
             Ok(())
         }
     }
@@ -206,6 +230,7 @@ fn handle_config(action: Option<ConfigAction>) -> raskolnikov::config::Result<()
             match key.as_str() {
                 "provider" => config.ai.provider = value.clone(),
                 "model" => config.ai.model = value.clone(),
+                "ollama_host" => config.ollama.host = value.clone(),
                 "nmap_timing" => {
                     config.tools.nmap_timing = value
                         .parse()
@@ -216,6 +241,23 @@ fn handle_config(action: Option<ConfigAction>) -> raskolnikov::config::Result<()
                         .parse()
                         .map_err(|_| format!("Invalid prefer_ffuf: {}", value))?;
                 }
+                "sqlmap_level" => {
+                    config.tools.sqlmap_level = value
+                        .parse()
+                        .map_err(|_| format!("Invalid sqlmap_level: {}", value))?;
+                }
+                "sqlmap_risk" => {
+                    config.tools.sqlmap_risk = value
+                        .parse()
+                        .map_err(|_| format!("Invalid sqlmap_risk: {}", value))?;
+                }
+                "stream_output" => {
+                    config.ui.stream_output = value
+                        .parse()
+                        .map_err(|_| format!("Invalid stream_output: {}", value))?;
+                }
+                "proxy" => config.network.proxy = value.clone(),
+                "proxy_https" => config.network.proxy_https = value.clone(),
                 _ => return Err(format!("Unknown config key: {}", key).into()),
             }
             raskolnikov::config::save(&config)?;
