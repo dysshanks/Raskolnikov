@@ -48,6 +48,54 @@ Runtime dependencies: `nmap`, `gobuster` (or `ffuf`), `nikto`, `sqlmap` — each
 tool is optional; missing tools are reported at startup. See
 `docs/TOOLS.md` for installation by distribution.
 
+### Local AI with Ollama
+
+Raskolnikov defaults to Ollama for local, free, no-auth inference.
+
+**Install Ollama:**
+
+```bash
+# Linux (official script)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Arch Linux
+sudo pacman -S ollama
+
+# macOS
+brew install ollama
+```
+
+**Pull a model:**
+
+```bash
+# Recommended for most setups (7B, fits 8 GB VRAM)
+ollama pull qwen2.5:7b
+
+# Latest Qwen model (8B, fits 12+ GB VRAM)
+ollama pull qwen3:8b
+
+# Smaller model for testing on CPU
+ollama pull tinyllama
+```
+
+**Run Ollama as a service:**
+
+| Init | Command |
+|------|---------|
+| systemd | `sudo systemctl enable --now ollama` |
+| openrc | `sudo rc-update add ollama default && sudo rc-service ollama start` |
+| runit | `sudo ln -s /etc/sv/ollama /var/service/ && sudo sv start ollama` |
+
+Verify it's running: `curl http://localhost:11434/api/tags`
+
+Then configure your model in `~/.config/raskolnikov/config.toml`:
+
+```toml
+[ai]
+provider = "ollama"
+model = "qwen2.5:7b"
+```
+
 ## Quick start
 
 ```bash

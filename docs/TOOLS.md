@@ -3,11 +3,15 @@
 Raskolnikov wraps these external tools. Each is optional — missing tools are
 reported at startup but do not prevent the agent from running.
 
+> **Note:** nikto requires the Perl module `XML::Writer`. Package managers
+> handle this automatically; for manual/source installs, install it separately
+> (e.g. `sudo perl -MCPAN -e 'install XML::Writer'`).
+
 | Tool | Purpose | Detection |
 |------|---------|-----------|
 | nmap | Port scanning, service detection, OS fingerprinting | `nmap --version` |
 | gobuster / ffuf | Web directory and DNS brute-forcing | `gobuster --version` / `ffuf -V` |
-| nikto | Web server vulnerability scanning | `nikto -Version` |
+| nikto | Web server vulnerability scanning | `nikto -Version` (requires Perl `XML::Writer`) |
 | sqlmap | SQL injection detection and exploitation | `sqlmap --version` |
 
 ## Arch Linux
@@ -81,9 +85,11 @@ go install github.com/OJ/gobuster/v3@latest
 # ffuf (Go required)
 go install github.com/ffuf/ffuf/v2@latest
 
-# nikto (Perl required)
+# nikto (Perl + XML::Writer required)
 git clone https://github.com/sullo/nikto
 cd nikto && sudo ln -s $PWD/program/nikto.pl /usr/local/bin/nikto
+# Also install the XML::Writer Perl module:
+sudo perl -MCPAN -e 'install XML::Writer'
 
 # sqlmap (Python required)
 git clone --depth 1 https://github.com/sqlmapproject/sqlmap

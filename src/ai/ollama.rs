@@ -15,6 +15,16 @@ impl OllamaProvider {
             client: reqwest::Client::new(),
         }
     }
+
+    pub async fn check_connection(&self) -> bool {
+        let url = format!("{}/api/tags", self.host);
+        self.client
+            .get(&url)
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+    }
 }
 
 #[async_trait]
