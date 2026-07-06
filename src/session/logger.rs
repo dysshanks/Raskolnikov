@@ -1,14 +1,14 @@
 use chrono::Utc;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
 const FLUSH_THRESHOLD: usize = 5000;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SessionEvent {
     pub ts: String,
     #[serde(rename = "type")]

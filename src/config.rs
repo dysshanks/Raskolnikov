@@ -47,6 +47,8 @@ pub struct AiConfig {
     pub provider: String,
     #[serde(default = "default_model")]
     pub model: String,
+    #[serde(default = "default_context_window")]
+    pub context_window: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,6 +132,7 @@ impl Default for AiConfig {
         Self {
             provider: default_provider(),
             model: default_model(),
+            context_window: default_context_window(),
         }
     }
 }
@@ -233,6 +236,10 @@ fn default_provider() -> String {
 
 fn default_model() -> String {
     "qwen3".to_string()
+}
+
+fn default_context_window() -> u32 {
+    131072
 }
 
 fn default_ollama_host() -> String {
@@ -381,11 +388,14 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
+pub fn is_first_launch() -> bool {
+    !config_path().exists()
+}
+
 pub fn load() -> Result<Config> {
     let path = config_path();
 
     if !path.exists() {
-        eprintln!("No config found at {}. Using defaults.", path.display());
         return Ok(Config::default());
     }
 
@@ -445,6 +455,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.ai.provider, "ollama");
         assert_eq!(config.ai.model, "qwen3");
+        assert_eq!(config.ai.context_window, 131072);
         assert_eq!(config.ollama.host, "http://localhost:11434");
         assert!(!config.tools.prefer_ffuf);
         assert_eq!(config.tools.nmap_timing, 4);

@@ -53,6 +53,8 @@ enum SessionsAction {
         )]
         keep: Option<u32>,
     },
+    /// Recover conversation.md and findings.md from session.log
+    Recover { id: String },
 }
 
 #[derive(Subcommand, Debug)]
@@ -89,6 +91,10 @@ async fn main() -> raskolnikov::config::Result<()> {
             }
             if let Some(provider) = &args.provider {
                 config.ai.provider = provider.clone();
+            }
+
+            if !config.cli.alias.is_empty() {
+                create_alias_symlink(&config.cli.alias);
             }
 
             raskolnikov::tui::run(config).await;
@@ -201,6 +207,16 @@ fn handle_sessions(action: SessionsAction) -> raskolnikov::config::Result<()> {
             }
             Ok(())
         }
+        SessionsAction::Recover { id } => {
+            let session_dir = raskolnikov::config::data_dir().join("sessions").join(&id);
+            if !session_dir.exists() {
+                return Err(format!("Session '{}' not found", id).into());
+            }
+            raskolnikov::session::recover::recover_session(&session_dir)
+                .map_err(|e| format!("Recovery failed: {}", e))?;
+            println!("Recovered session '{}'", id);
+            Ok(())
+        }
     }
 }
 
@@ -256,6 +272,12 @@ fn handle_config(action: Option<ConfigAction>) -> raskolnikov::config::Result<()
                         .parse()
                         .map_err(|_| format!("Invalid stream_output: {}", value))?;
                 }
+                "alias" => config.cli.alias = value.clone(),
+                "context_window" => {
+                    config.ai.context_window = value
+                        .parse()
+                        .map_err(|_| format!("Invalid context_window: {}", value))?;
+                }
                 "proxy" => config.network.proxy = value.clone(),
                 "proxy_https" => config.network.proxy_https = value.clone(),
                 _ => return Err(format!("Unknown config key: {}", key).into()),
@@ -265,6 +287,20 @@ fn handle_config(action: Option<ConfigAction>) -> raskolnikov::config::Result<()
             Ok(())
         }
     }
+}
+
+fn create_alias_symlink(alias: &str) {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let dir = exe.parent().unwrap_or(&exe);
+    let link = dir.join(alias);
+    if link.exists() {
+        return;
+    }
+    let _ = std::os::unix::fs::symlink(&exe, &link);
+    eprintln!("Created alias: {} -> {}", link.display(), exe.display());
 }
 
 fn handle_tools() -> raskolnikov::config::Result<()> {

@@ -470,10 +470,24 @@ impl App {
                     return;
                 }
 
-                let _ = tx.send(
-                    "[system] Build successful! Restart raskolnikov to use the new binary."
-                        .to_string(),
-                );
+                let _ = tx.send("Installing new binary...".to_string());
+                let src = std::path::Path::new("target/release/raskolnikov");
+                let dst = std::env::current_exe().ok();
+                if let (true, Some(dst)) = (src.exists(), dst) {
+                    if src.canonicalize().ok().as_deref() != Some(&dst) {
+                        match tokio::fs::copy(src, &dst).await {
+                            Ok(_) => {
+                                let _ = tx.send(format!("[system] Updated: {}", dst.display()));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(format!(
+                                    "[system] Could not install binary: {}. The new binary is at target/release/raskolnikov",
+                                    e
+                                ));
+                            }
+                        }
+                    }
+                }
 
                 if update_tools {
                     let _ = tx.send("$ apt-get update && apt-get install...".to_string());
@@ -540,6 +554,25 @@ impl App {
             }
         };
 
+        let context_window = self.config.ai.context_window;
+        let (needs_summary, total_tokens, ratio) =
+            crate::ai::check_context(&self.messages, context_window);
+        if needs_summary {
+            let summarised = crate::ai::summarise_context(&mut self.messages);
+            if summarised > 0 {
+                let pct = (ratio * 100.0) as u32;
+                let warning = format!(
+                    "[system] Context at {}% ({} tokens). {} tool output{} summarised.",
+                    pct,
+                    total_tokens,
+                    summarised,
+                    if summarised == 1 { "" } else { "s" },
+                );
+                self.conversation.push(warning.clone());
+                self.toast = Some((warning, Instant::now()));
+            }
+        }
+
         let system_prompt = self.agent_shell.build_prompt();
         let history = self.messages.clone();
 
@@ -597,9 +630,15 @@ impl App {
             &flags,
         );
 
-        let output_dir = self.session_dir.join("output");
-        if output_dir.exists() {
-            let _ = std::fs::remove_dir_all(&output_dir);
+        let tools_dir = self.session_dir.join("tools");
+        let _ = std::fs::create_dir_all(&tools_dir);
+        for (tool_name, output) in &self.tool_outputs {
+            let ext = match tool_name.as_str() {
+                "nmap" => "xml",
+                _ => "txt",
+            };
+            let path = tools_dir.join(format!("{}_output.{}", tool_name, ext));
+            let _ = std::fs::write(&path, output);
         }
 
         let log_path = self.session_dir.join("session.log");

@@ -976,6 +976,7 @@ rsk sessions show <id>        print conversation.md
 rsk sessions findings <id>    print findings.md
 rsk sessions log <id>         dump raw JSON log
 rsk sessions prune <flags>    remove old sessions
+rsk sessions recover <id>      rebuild conversation.md + findings.md from session.log
 ```
 
 -----
@@ -1097,6 +1098,7 @@ SUBCOMMANDS
   rsk sessions findings <id>    print findings summary
   rsk sessions log <id>         dump raw JSON log
   rsk sessions prune <flags>    remove old sessions
+  rsk sessions recover <id>     rebuild conversation.md + findings.md from session.log
   rsk config                    show current config
   rsk config provider <p>       set AI provider
   rsk config model <m>          set default model
@@ -1113,12 +1115,13 @@ SUBCOMMANDS
 # ~/.config/raskolnikov/config.toml
 
 [cli]
-alias = ""              # optional custom binary alias
+alias = ""              # optional custom binary alias (creates symlink)
 
 [ai]
 provider = "ollama"     # ollama | anthropic | openai | openrouter |
                         # groq | nous | llama-api | together
 model    = "qwen3"
+context_window = 131072 # context limit; 80% triggers summarisation
 
 [ollama]
 host = "http://localhost:11434"

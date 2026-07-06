@@ -12,7 +12,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  matrix:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -115,19 +115,49 @@ jobs:
 
           dpkg-deb --build deb raskolnikov_${{ env.DEB_VERSION }}_$ARCH.deb
 
-      - name: Upload release artifacts
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.artifact-suffix }}
+          path: |
+            dist/raskolnikov-${{ env.RELEASE_TAG }}-${{ matrix.artifact-suffix }}.tar.gz
+            raskolnikov_${{ env.DEB_VERSION }}_*.deb
+
+  release:
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive release tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "RELEASE_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          else
+            echo "RELEASE_TAG=nightly-$(date +%Y%m%d)-${{ github.sha }}" >> $GITHUB_ENV
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts for upload
+        run: |
+          mkdir -p upload
+          find artifacts -type f -exec cp {} upload/ \;
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: |
-            dist/raskolnikov-${{ env.RELEASE_TAG }}-${{ matrix.artifact-suffix }}.tar.gz
-            raskolnikov_${{ env.DEB_VERSION }}_*.deb
+          files: upload/*
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   docker:
-    needs: [matrix]
+    needs: [build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -168,7 +198,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   nix:
-    needs: [matrix]
+    needs: [build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

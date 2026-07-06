@@ -95,6 +95,44 @@ pub(crate) fn http_client() -> reqwest::Client {
         .clone()
 }
 
+/// Rough token estimation (chars / 4)
+pub fn estimate_tokens(text: &str) -> u32 {
+    (text.len() / 4) as u32
+}
+
+/// Returns whether summarisation is needed and the total estimated tokens
+pub fn check_context(messages: &[Message], context_window: u32) -> (bool, u32, f64) {
+    let total: u32 = messages.iter().map(|m| estimate_tokens(&m.content)).sum();
+    let ratio = total as f64 / context_window as f64;
+    (ratio >= 0.80, total, ratio)
+}
+
+/// Summarise old tool messages by replacing verbose outputs with a short note.
+/// Never touches system, user, or assistant messages.
+pub fn summarise_context(messages: &mut [Message]) -> u32 {
+    let mut count = 0;
+    for msg in messages.iter_mut() {
+        if let Role::Tool = msg.role {
+            let lines: Vec<&str> = msg.content.lines().collect();
+            if lines.len() > 10 {
+                let summary = lines
+                    .iter()
+                    .take(3)
+                    .copied()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                msg.content = format!(
+                    "[Tool output summarised — {} lines]\n{}\n[...]",
+                    lines.len(),
+                    summary
+                );
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 #[derive(Debug, Clone)]
 pub enum ProviderKind {
     Ollama(ollama::OllamaProvider),
