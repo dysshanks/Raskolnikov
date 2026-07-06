@@ -6,7 +6,7 @@ target/
 .vscode/
 .idea/
 *.iml
-session/
+/session/
 *.deb
 *.tar.gz
 localhost-open-ports.txt
