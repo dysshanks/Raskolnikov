@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags: ["v*"]
 
 permissions:
@@ -31,6 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Derive release tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "RELEASE_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+          else
+            echo "RELEASE_TAG=nightly-$(date +%Y%m%d)-${{ github.sha }}" >> $GITHUB_ENV
+          fi
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -59,7 +68,7 @@ jobs:
           ln -s raskolnikov dist/rsk
           ln -s raskolnikov dist/rk
           cd dist
-          tar czf raskolnikov-${{ github.ref_name }}-${{ matrix.artifact-suffix }}.tar.gz raskolnikov rsk rk
+          tar czf raskolnikov-${{ env.RELEASE_TAG }}-${{ matrix.artifact-suffix }}.tar.gz raskolnikov rsk rk
 
       - name: Build .deb package (Linux only)
         if: contains(matrix.target, 'linux')
@@ -78,7 +87,7 @@ jobs:
           mkdir -p deb/DEBIAN
           cat > deb/DEBIAN/control <<EOF
           Package: raskolnikov
-          Version: ${{ github.ref_name }}
+          Version: ${{ env.RELEASE_TAG }}
           Architecture: $ARCH
           Maintainer: Raskolnikov Security Team
           Description: Terminal-native, markdown-driven AI security operating environment
@@ -87,14 +96,15 @@ jobs:
           Priority: optional
           EOF
 
-          dpkg-deb --build deb raskolnikov_${{ github.ref_name }}_$ARCH.deb
+          dpkg-deb --build deb raskolnikov_${{ env.RELEASE_TAG }}_$ARCH.deb
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
-            dist/raskolnikov-${{ github.ref_name }}-${{ matrix.artifact-suffix }}.tar.gz
-            raskolnikov_${{ github.ref_name }}_*.deb
+            dist/raskolnikov-${{ env.RELEASE_TAG }}-${{ matrix.artifact-suffix }}.tar.gz
+            raskolnikov_${{ env.RELEASE_TAG }}_*.deb
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

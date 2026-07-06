@@ -1,5 +1,4 @@
-# Maintainer: shanks <dysshanks@proton.me>
-# Contributor: Raskolnikov Security Team
+# Maintainer: Raskolnikov Security Team
 
 pkgname=raskolnikov
 pkgver=0.1.0
