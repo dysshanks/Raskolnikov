@@ -51,8 +51,13 @@ jobs:
       - name: Install cross-compilation deps (Linux ARM64)
         if: contains(matrix.target, 'linux') && contains(matrix.target, 'aarch64')
         run: |
+          sudo dpkg --add-architecture arm64
+          sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu dpkg-dev libssl-dev:arm64 pkg-config-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu dpkg-dev libssl-dev:arm64
 
       - name: Install deps (Linux x86_64)
         if: contains(matrix.target, 'linux') && !contains(matrix.target, 'aarch64')
