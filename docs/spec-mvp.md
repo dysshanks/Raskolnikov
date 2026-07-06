@@ -1007,6 +1007,31 @@ Script install (fallback — not recommended for a security tool):
 curl -fsSL https://raskolnikov.sh/install | bash
 ```
 
+### Docker
+
+```bash
+docker pull ghcr.io/dysshanks/raskolnikov:latest
+docker run -it --rm ghcr.io/dysshanks/raskolnikov:latest
+```
+
+Images are published to GitHub Container Registry. Tagged releases publish
+`latest` and semver tags; every push to main publishes a `nightly` tag.
+The image bundles nmap, gobuster, nikto, and sqlmap.
+
+### Nix
+
+```bash
+nix run github:dysshanks/Raskolnikov
+```
+
+Or add to your `flake.nix`:
+
+```nix
+inputs.raskolnikov.url = "github:dysshanks/Raskolnikov";
+```
+
+A dev shell with all tools is available via `nix develop`.
+
 ### Build from source
 
 Requires Rust stable 1.75+.

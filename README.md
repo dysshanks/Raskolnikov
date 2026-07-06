@@ -32,6 +32,31 @@ mid-session.
 
 ## Installation
 
+### Docker
+
+```bash
+docker pull ghcr.io/dysshanks/raskolnikov:latest
+docker run -it --rm ghcr.io/dysshanks/raskolnikov:latest
+```
+
+Images are published to GitHub Container Registry for tagged releases (`latest`)
+and every push to main (`nightly`). The image bundles nmap, gobuster, nikto,
+and sqlmap.
+
+### Nix
+
+```bash
+nix run github:dysshanks/Raskolnikov
+```
+
+Or add to your `flake.nix`:
+
+```nix
+inputs.raskolnikov.url = "github:dysshanks/Raskolnikov";
+```
+
+A dev shell with all tools is available via `nix develop`.
+
 ### From source
 
 ```bash
