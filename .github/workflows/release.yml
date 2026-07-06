@@ -52,11 +52,10 @@ jobs:
         if: contains(matrix.target, 'linux') && contains(matrix.target, 'aarch64')
         run: |
           sudo dpkg --add-architecture arm64
-          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/azure-cli.list /etc/apt/sources.list.d/google-chrome.list
           echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
           echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
           echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
-          sudo apt-get update
+          sudo apt-get update || true
           sudo apt-get install -y gcc-aarch64-linux-gnu dpkg-dev libssl-dev:arm64
 
       - name: Install deps (Linux x86_64)
