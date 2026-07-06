@@ -173,7 +173,13 @@ fn render_bar(app: &App, frame: &mut Frame, area: Rect) {
         .borders(Borders::TOP)
         .border_style(Style::default().fg(app.colors.accent));
 
-    let status = if app.state == AppState::ToolRunning {
+    let status = if app.state == AppState::Updating {
+        let sp = spinner_char(app.frame_count);
+        format!(
+            " {}  │  {}  │  {} updating {}",
+            app.model_name, elapsed_str, VERSION, sp
+        )
+    } else if app.state == AppState::ToolRunning {
         let bar = bar_char(app.frame_count);
         format!(
             " {}  │  {}  │  {} {}{}",
@@ -210,6 +216,7 @@ fn render_input(app: &App, frame: &mut Frame, area: Rect) {
     let (prefix, text, show_cursor) = match app.state {
         AppState::ConfirmQuit | AppState::AwaitingConfirm => ("> ", app.input.clone(), false),
         AppState::Interrupted => ("> ", "[interrupted] Press Enter".to_string(), false),
+        AppState::Updating => ("> ", "[updating...]".to_string(), false),
         _ => {
             let t = if app.queued_message.is_some() {
                 format!("{} [queued]", app.input)
@@ -267,6 +274,7 @@ fn render_island(app: &App, frame: &mut Frame, area: Rect) {
         AppState::ToolRunning => "tool",
         AppState::Interrupted => "interrupted",
         AppState::ConfirmQuit => "quit?",
+        AppState::Updating => "updating",
     };
 
     let block = Block::default()

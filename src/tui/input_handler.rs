@@ -113,13 +113,23 @@ impl App {
             }
             KeyCode::Enter => {
                 if self.input.starts_with('/') && !self.filtered_commands.is_empty() {
-                    if let Some(&idx) = self.filtered_commands.get(self.selected_command) {
-                        let cmd = &COMMANDS[idx];
-                        let base = cmd.name.split_whitespace().next().unwrap_or(cmd.name);
-                        self.input = format!("{} ", base);
+                    let trimmed = self.input.trim();
+                    let is_exact = self
+                        .filtered_commands
+                        .iter()
+                        .any(|&idx| COMMANDS[idx].name == trimmed);
+                    if is_exact {
                         self.filtered_commands.clear();
+                    } else {
+                        if let Some(&idx) = self.filtered_commands.get(self.selected_command) {
+                            let cmd = &COMMANDS[idx];
+                            let base =
+                                cmd.name.split_whitespace().next().unwrap_or(cmd.name);
+                            self.input = format!("{} ", base);
+                            self.filtered_commands.clear();
+                        }
+                        return Ok(());
                     }
-                    return Ok(());
                 }
 
                 let input = std::mem::take(&mut self.input);
@@ -153,6 +163,7 @@ impl App {
                         Ok(())
                     }
                     AppState::ConfirmQuit => Ok(()),
+                    AppState::Updating => Ok(()),
                 }
             }
             KeyCode::Char(c) => {

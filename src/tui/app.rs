@@ -17,6 +17,7 @@ use ratatui::Terminal;
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tokio::process::Command;
 use tokio::sync::watch;
 
 pub struct Colors {
@@ -53,6 +54,14 @@ pub(crate) const COMMANDS: &[CommandDef] = &[
         name: "/quit",
         description: "End the session",
     },
+    CommandDef {
+        name: "/update",
+        description: "Pull latest source and rebuild",
+    },
+    CommandDef {
+        name: "/update tools",
+        description: "Rebuild and update system tools (nmap, gobuster, nikto, sqlmap)",
+    },
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -62,6 +71,7 @@ pub enum AppState {
     ToolRunning,
     Interrupted,
     ConfirmQuit,
+    Updating,
 }
 
 pub struct App {
@@ -90,6 +100,7 @@ pub struct App {
     pub provider_name: String,
     pub model_name: String,
     pub tool_output_rx: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    pub update_output_rx: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
     pub streaming_rx: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
     pub stream_done_rx: Option<tokio::sync::oneshot::Receiver<Result<ProviderResponse, String>>>,
     pub toast: Option<(String, Instant)>,
@@ -148,6 +159,7 @@ impl App {
             provider_name,
             model_name,
             tool_output_rx: None,
+            update_output_rx: None,
             streaming_rx: None,
             stream_done_rx: None,
             toast: None,
@@ -202,6 +214,23 @@ impl App {
                     self.conversation.push(format!("│ {}", line));
                     self.scroll_offset_conv = self.conversation.len();
                     self.auto_scroll = true;
+                }
+            }
+
+            if let Some(rx) = self.update_output_rx.as_mut() {
+                while let Ok(line) = rx.try_recv() {
+                    if line == "[update_done]" {
+                        self.conversation
+                            .push("[system] Update complete.".to_string());
+                    } else {
+                        self.conversation.push(line);
+                    }
+                    self.scroll_offset_conv = self.conversation.len();
+                    self.auto_scroll = true;
+                }
+                if rx.is_closed() {
+                    self.update_output_rx = None;
+                    self.state = AppState::Idle;
                 }
             }
 
@@ -315,6 +344,10 @@ impl App {
                             continue;
                         }
 
+                        if self.state == AppState::Updating {
+                            continue;
+                        }
+
                         if let Err(e) = self.handle_key(key) {
                             self.conversation.push(format!("[system] Error: {}", e));
                         }
@@ -331,6 +364,11 @@ impl App {
             return;
         }
 
+        if trimmed == "/quit" {
+            self.state = AppState::ConfirmQuit;
+            return;
+        }
+
         if trimmed == "/island" {
             self.show_island = !self.show_island;
             return;
@@ -344,6 +382,116 @@ impl App {
                     .push(format!("[system] Finding tagged: {}", finding));
                 self.toast = Some((format!("✓ Finding tagged: {}", finding), Instant::now()));
             }
+            return;
+        }
+
+        if trimmed == "/update" || trimmed == "/update tools" {
+            let update_tools = trimmed == "/update tools";
+            self.conversation
+                .push("[system] Starting update...".to_string());
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            self.update_output_rx = Some(rx);
+            self.state = AppState::Updating;
+            tokio::spawn(async move {
+                let _ = tx.send("Pulling latest source...".to_string());
+                let pull = Command::new("git")
+                    .args(["pull", "--rebase"])
+                    .output()
+                    .await;
+                match pull {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        for line in stdout.lines() {
+                            let _ = tx.send(line.to_string());
+                        }
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        for line in stderr.lines() {
+                            if !line.is_empty() {
+                                let _ = tx.send(line.to_string());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(format!("git pull failed: {}", e));
+                        let _ = tx.send("(is this a git repo?)".to_string());
+                        let _ = tx.send("[system] Update failed.".to_string());
+                        return;
+                    }
+                }
+                let _ = tx.send("Building release binary...".to_string());
+                let build = Command::new("cargo")
+                    .args(["build", "--release"])
+                    .output()
+                    .await;
+                match build {
+                    Ok(out) => {
+                        let stdout = String::from_utf8_lossy(&out.stdout);
+                        for line in stdout.lines() {
+                            if !line.is_empty() {
+                                let _ = tx.send(line.to_string());
+                            }
+                        }
+                        let stderr = String::from_utf8_lossy(&out.stderr);
+                        for line in stderr.lines() {
+                            if !line.is_empty() {
+                                let _ = tx.send(line.to_string());
+                            }
+                        }
+                        if out.status.success() {
+                            let _ = tx
+                                .send("[system] Build successful! Restart raskolnikov to use the new binary."
+                                    .to_string());
+                        } else {
+                            let _ = tx
+                                .send("[system] Build failed. See output above.".to_string());
+                            let _ = tx.send("[system] Update failed.".to_string());
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(format!("cargo build failed: {}", e));
+                        let _ = tx.send("[system] Update failed.".to_string());
+                        return;
+                    }
+                }
+                if update_tools {
+                    let _ = tx.send("Updating system tools...".to_string());
+                    #[cfg(target_os = "linux")]
+                    {
+                        let apt = Command::new("sh")
+                            .args([
+                                "-c",
+                                "sudo apt-get update && sudo apt-get install -y nmap gobuster nikto sqlmap",
+                            ])
+                            .output()
+                            .await;
+                        match apt {
+                            Ok(out) => {
+                                let stdout = String::from_utf8_lossy(&out.stdout);
+                                for line in stdout.lines() {
+                                    if !line.is_empty() {
+                                        let _ = tx.send(line.to_string());
+                                    }
+                                }
+                                if out.status.success() {
+                                    let _ = tx
+                                        .send("[system] Tools updated.".to_string());
+                                }
+                            }
+                            Err(e) => {
+                                let _ = tx.send(format!("Tool update failed: {}", e));
+                            }
+                        }
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        let _ = tx
+                            .send("Please update tools manually via Homebrew: brew upgrade nmap gobuster nikto sqlmap"
+                                .to_string());
+                    }
+                }
+                let _ = tx.send("[update_done]".to_string());
+            });
             return;
         }
 
