@@ -2,40 +2,40 @@
 
 "ai":
   - changed-files:
-      - any: ["src/ai/**"]
+      - any-glob-to-any-file: ["src/ai/**"]
 
 "tui":
   - changed-files:
-      - any: ["src/tui/**"]
+      - any-glob-to-any-file: ["src/tui/**"]
 
 "tools":
   - changed-files:
-      - any: ["src/tools/**"]
+      - any-glob-to-any-file: ["src/tools/**"]
 
 "session":
   - changed-files:
-      - any: ["src/session/**"]
+      - any-glob-to-any-file: ["src/session/**"]
 
 "agent":
   - changed-files:
-      - any: ["src/agent/**"]
+      - any-glob-to-any-file: ["src/agent/**"]
 
 "config":
   - changed-files:
-      - any: ["src/config.rs"]
+      - any-glob-to-any-file: ["src/config.rs"]
 
 "cli":
   - changed-files:
-      - any: ["src/main.rs"]
+      - any-glob-to-any-file: ["src/main.rs"]
 
 "documentation":
   - changed-files:
-      - any: ["docs/**", "*.md"]
+      - any-glob-to-any-file: ["docs/**", "*.md"]
 
 "ci":
   - changed-files:
-      - any: [".github/**"]
+      - any-glob-to-any-file: [".github/**"]
 
 "packaging":
   - changed-files:
-      - any: ["packaging/**", "Cargo.toml"]
+      - any-glob-to-any-file: ["packaging/**", "Cargo.toml"]
