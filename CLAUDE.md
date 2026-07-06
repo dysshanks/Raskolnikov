@@ -13,7 +13,8 @@ Raskolnikov is a terminal-native, markdown-driven AI security operating environm
 
 ## Module organisation
 - Top-level modules declared in `src/lib.rs` as `pub mod`
-- Each sub-module's `mod.rs` contains only `pub mod` declarations — no re-exports
+- Module roots use the modern convention: `src/<module>.rs` (e.g. `src/session.rs`, not `src/session/mod.rs`)
+- Each sub-module's directory contains only leaf files — no `mod.rs`
 - Reference via full path: `crate::tools::nmap::NmapPort`
 - Flat within each module — no nesting beyond 2 levels
 - Module structure must match `docs/spec-mvp.md` Project Structure section

@@ -1,0 +1,6 @@
+# Each line is a file pattern followed by one or more owners.
+# The owners will be automatically requested for review when
+# someone opens a PR that changes matching files.
+
+# Default owner for everything in the repo
+* @dysshanks
