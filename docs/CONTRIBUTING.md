@@ -3,7 +3,7 @@
 ## Getting started
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/dysshanks/Raskolnikov.git
 cd raskolnikov
 cargo build
 cargo test

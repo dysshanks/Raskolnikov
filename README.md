@@ -35,7 +35,7 @@ mid-session.
 ### From source
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/dysshanks/Raskolnikov.git
 cd raskolnikov
 cargo build --release
 sudo cp target/release/raskolnikov /usr/local/bin/

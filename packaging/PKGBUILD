@@ -1,0 +1,40 @@
+# Maintainer: shanks <dysshanks@proton.me>
+# Contributor: Raskolnikov Security Team
+
+pkgname=raskolnikov
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Terminal-native, markdown-driven AI security operating environment"
+arch=('x86_64' 'aarch64')
+url="https://github.com/dysshanks/Raskolnikov"
+license=('Apache-2.0')
+depends=(
+  'nmap'
+  'gobuster'
+  'nikto'
+  'sqlmap'
+)
+makedepends=('cargo' 'rust')
+provides=('raskolnikov' 'rsk' 'rk')
+conflicts=()
+source=("$pkgname-$pkgver.tar.gz::https://github.com/dysshanks/Raskolnikov/archive/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$srcdir/$pkgname-$pkgver"
+  cargo build --release --locked
+}
+
+check() {
+  cd "$srcdir/$pkgname-$pkgver"
+  cargo test --locked
+}
+
+package() {
+  cd "$srcdir/$pkgname-$pkgver"
+  install -Dm755 target/release/raskolnikov "$pkgdir/usr/bin/raskolnikov"
+  ln -s raskolnikov "$pkgdir/usr/bin/rsk"
+  ln -s raskolnikov "$pkgdir/usr/bin/rk"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 docs/man/raskolnikov.1 -t "$pkgdir/usr/share/man/man1/"
+}

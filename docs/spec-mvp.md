@@ -60,7 +60,7 @@ Raskolnikov is a terminal system. Permanent constraint, not a temporary limitati
 
 ### Open Source First
 
-- Repository: `<repo-url>`
+- Repository: <https://github.com/dysshanks/Raskolnikov>
 - Apache-2.0 license
 - No proprietary core, no cloud-gated features, no paywalls
 - All design decisions documented and open for community discussion
@@ -995,8 +995,8 @@ AUR package installs the binary, man page, shell completions, and `rsk`/`rk` sym
 Signed `.deb` is the recommended install method:
 
 ```bash
-wget <repo-url>/releases/download/v0.1.0/raskolnikov_0.1.0_amd64.deb
-wget <repo-url>/releases/download/v0.1.0/raskolnikov_0.1.0_amd64.deb.sig
+wget https://github.com/dysshanks/Raskolnikov/releases/download/v0.1.0/raskolnikov_0.1.0_amd64.deb
+wget https://github.com/dysshanks/Raskolnikov/releases/download/v0.1.0/raskolnikov_0.1.0_amd64.deb.sig
 gpg --verify raskolnikov_0.1.0_amd64.deb.sig raskolnikov_0.1.0_amd64.deb
 sudo dpkg -i raskolnikov_0.1.0_amd64.deb
 ```
@@ -1012,7 +1012,7 @@ curl -fsSL https://raskolnikov.sh/install | bash
 Requires Rust stable 1.75+.
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/dysshanks/Raskolnikov.git
 cd raskolnikov
 cargo build --release
 sudo install -m755 target/release/raskolnikov /usr/local/bin/raskolnikov

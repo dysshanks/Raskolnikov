@@ -1,0 +1,41 @@
+# Label PRs based on changed paths
+
+"ai":
+  - changed-files:
+      - any: ["src/ai/**"]
+
+"tui":
+  - changed-files:
+      - any: ["src/tui/**"]
+
+"tools":
+  - changed-files:
+      - any: ["src/tools/**"]
+
+"session":
+  - changed-files:
+      - any: ["src/session/**"]
+
+"agent":
+  - changed-files:
+      - any: ["src/agent/**"]
+
+"config":
+  - changed-files:
+      - any: ["src/config.rs"]
+
+"cli":
+  - changed-files:
+      - any: ["src/main.rs"]
+
+"documentation":
+  - changed-files:
+      - any: ["docs/**", "*.md"]
+
+"ci":
+  - changed-files:
+      - any: [".github/**"]
+
+"packaging":
+  - changed-files:
+      - any: ["packaging/**", "Cargo.toml"]

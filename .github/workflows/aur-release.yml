@@ -1,0 +1,57 @@
+name: AUR release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    if: github.repository == 'dysshanks/Raskolnikov'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: tag
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update PKGBUILD and push to AUR
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          AUR_PACKAGE: raskolnikov
+        run: |
+          set -euo pipefail
+
+          # Write SSH key
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat >> ~/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            StrictHostKeyChecking accept-new
+            User aur
+          EOF
+
+          # Clone AUR repo
+          git clone "ssh://aur@aur.archlinux.org/$AUR_PACKAGE.git" /tmp/aur-pkg
+
+          # Download release tarball and compute checksums
+          VERSION="${{ steps.tag.outputs.version }}"
+          TARBALL="$AUR_PACKAGE-$VERSION.tar.gz"
+          curl -sL "https://github.com/dysshanks/Raskolnikov/archive/v$VERSION.tar.gz" -o "/tmp/$TARBALL"
+          SHA256=$(sha256sum "/tmp/$TARBALL" | cut -d' ' -f1)
+
+          # Update PKGBUILD in AUR repo
+          cd /tmp/aur-pkg
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i "s/^sha256sums=.*/sha256sums=('$SHA256')/"
+
+          # Update .SRCINFO
+          makepkg --printsrcinfo > .SRCINFO
+
+          # Commit and push
+          git add PKGBUILD .SRCINFO
+          git commit -m "Update to v$VERSION"
+          git push
