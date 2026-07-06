@@ -16,7 +16,9 @@ use ratatui::style::Color;
 use ratatui::Terminal;
 use std::io;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::watch;
 
@@ -392,95 +394,105 @@ impl App {
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             self.update_output_rx = Some(rx);
             self.state = AppState::Updating;
+
+            async fn run_cmd(tx: &tokio::sync::mpsc::UnboundedSender<String>, cmd: &mut Command) -> bool {
+                let child = cmd
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .map_err(|e| {
+                        let _ = tx.send(format!("Failed to spawn: {}", e));
+                    })
+                    .ok();
+                let mut child = match child {
+                    Some(c) => c,
+                    None => return false,
+                };
+
+                let stdout = child.stdout.take().unwrap();
+                let stderr = child.stderr.take().unwrap();
+                let mut stdout_reader = BufReader::new(stdout).lines();
+                let mut stderr_reader = BufReader::new(stderr).lines();
+                let tx_stdout = tx.clone();
+                let tx_stderr = tx.clone();
+
+                let out_task = tokio::spawn(async move {
+                    while let Ok(Some(line)) = stdout_reader.next_line().await {
+                        if !line.is_empty() {
+                            let _ = tx_stdout.send(line);
+                        }
+                    }
+                });
+                let err_task = tokio::spawn(async move {
+                    while let Ok(Some(line)) = stderr_reader.next_line().await {
+                        if !line.is_empty() {
+                            let _ = tx_stderr.send(format!("  {}", line));
+                        }
+                    }
+                });
+
+                let status = child.wait().await;
+                let _ = out_task.await;
+                let _ = err_task.await;
+
+                match status {
+                    Ok(s) if s.success() => true,
+                    Ok(s) => {
+                        let code = s.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
+                        let _ = tx.send(format!("[system] Exited with code {}", code));
+                        false
+                    }
+                    Err(e) => {
+                        let _ = tx.send(format!("[system] Process error: {}", e));
+                        false
+                    }
+                }
+            }
+
             tokio::spawn(async move {
-                let _ = tx.send("Pulling latest source...".to_string());
-                let pull = Command::new("git")
-                    .args(["pull", "--rebase"])
-                    .output()
-                    .await;
-                match pull {
-                    Ok(out) => {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        for line in stdout.lines() {
-                            let _ = tx.send(line.to_string());
-                        }
-                        let stderr = String::from_utf8_lossy(&out.stderr);
-                        for line in stderr.lines() {
-                            if !line.is_empty() {
-                                let _ = tx.send(line.to_string());
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(format!("git pull failed: {}", e));
-                        let _ = tx.send("(is this a git repo?)".to_string());
-                        let _ = tx.send("[system] Update failed.".to_string());
-                        return;
-                    }
+                let _ = tx.send("$ git pull --rebase".to_string());
+                let ok = run_cmd(
+                    &tx,
+                    Command::new("git").args(["pull", "--rebase"]),
+                )
+                .await;
+                if !ok {
+                    let _ = tx.send("[system] Update failed at git pull.".to_string());
+                    return;
                 }
-                let _ = tx.send("Building release binary...".to_string());
-                let build = Command::new("cargo")
-                    .args(["build", "--release"])
-                    .output()
-                    .await;
-                match build {
-                    Ok(out) => {
-                        let stdout = String::from_utf8_lossy(&out.stdout);
-                        for line in stdout.lines() {
-                            if !line.is_empty() {
-                                let _ = tx.send(line.to_string());
-                            }
-                        }
-                        let stderr = String::from_utf8_lossy(&out.stderr);
-                        for line in stderr.lines() {
-                            if !line.is_empty() {
-                                let _ = tx.send(line.to_string());
-                            }
-                        }
-                        if out.status.success() {
-                            let _ = tx
-                                .send("[system] Build successful! Restart raskolnikov to use the new binary."
-                                    .to_string());
-                        } else {
-                            let _ = tx
-                                .send("[system] Build failed. See output above.".to_string());
-                            let _ = tx.send("[system] Update failed.".to_string());
-                            return;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx.send(format!("cargo build failed: {}", e));
-                        let _ = tx.send("[system] Update failed.".to_string());
-                        return;
-                    }
+
+                let _ = tx.send("$ cargo build --release".to_string());
+                let ok = run_cmd(
+                    &tx,
+                    Command::new("cargo").args(["build", "--release"]),
+                )
+                .await;
+                if !ok {
+                    let _ = tx.send("[system] Update failed at cargo build.".to_string());
+                    return;
                 }
+
+                let _ = tx
+                    .send("[system] Build successful! Restart raskolnikov to use the new binary."
+                        .to_string());
+
                 if update_tools {
-                    let _ = tx.send("Updating system tools...".to_string());
+                    let _ = tx.send("$ apt-get update && apt-get install...".to_string());
                     #[cfg(target_os = "linux")]
                     {
-                        let apt = Command::new("sh")
-                            .args([
+                        let ok = run_cmd(
+                            &tx,
+                            Command::new("sh").args([
                                 "-c",
                                 "sudo apt-get update && sudo apt-get install -y nmap gobuster nikto sqlmap",
-                            ])
-                            .output()
-                            .await;
-                        match apt {
-                            Ok(out) => {
-                                let stdout = String::from_utf8_lossy(&out.stdout);
-                                for line in stdout.lines() {
-                                    if !line.is_empty() {
-                                        let _ = tx.send(line.to_string());
-                                    }
-                                }
-                                if out.status.success() {
-                                    let _ = tx
-                                        .send("[system] Tools updated.".to_string());
-                                }
-                            }
-                            Err(e) => {
-                                let _ = tx.send(format!("Tool update failed: {}", e));
-                            }
+                            ]),
+                        )
+                        .await;
+                        if ok {
+                            let _ = tx.send("[system] Tools updated.".to_string());
+                        } else {
+                            let _ = tx
+                                .send("[system] Tool update failed.".to_string());
                         }
                     }
                     #[cfg(target_os = "macos")]
@@ -490,6 +502,7 @@ impl App {
                                 .to_string());
                     }
                 }
+
                 let _ = tx.send("[update_done]".to_string());
             });
             return;
