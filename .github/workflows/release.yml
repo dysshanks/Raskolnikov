@@ -35,9 +35,12 @@ jobs:
       - name: Derive release tag
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "RELEASE_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
+            TAG="${{ github.ref_name }}"
+            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+            echo "DEB_VERSION=${TAG#v}" >> $GITHUB_ENV
           else
             echo "RELEASE_TAG=nightly-$(date +%Y%m%d)-${{ github.sha }}" >> $GITHUB_ENV
+            echo "DEB_VERSION=0.1.0~nightly-$(date +%Y%m%d)" >> $GITHUB_ENV
           fi
 
       - name: Install Rust toolchain
@@ -46,10 +49,16 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install cross-compilation deps (Linux ARM64)
-        if: contains(matrix.target, 'linux')
+        if: contains(matrix.target, 'linux') && contains(matrix.target, 'aarch64')
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu dpkg-dev
+          sudo apt-get install -y gcc-aarch64-linux-gnu dpkg-dev libssl-dev:arm64 pkg-config-aarch64-linux-gnu
+
+      - name: Install deps (Linux x86_64)
+        if: contains(matrix.target, 'linux') && !contains(matrix.target, 'aarch64')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
@@ -60,6 +69,10 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_DIR: /usr/lib/aarch64-linux-gnu
+          PKG_CONFIG_ALLOW_CROSS: 1
+          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
+          PKG_CONFIG_SYSROOT_DIR: /
 
       - name: Prepare archive
         run: |
@@ -87,7 +100,7 @@ jobs:
           mkdir -p deb/DEBIAN
           cat > deb/DEBIAN/control <<EOF
           Package: raskolnikov
-          Version: ${{ env.RELEASE_TAG }}
+          Version: ${{ env.DEB_VERSION }}
           Architecture: $ARCH
           Maintainer: Raskolnikov Security Team
           Description: Terminal-native, markdown-driven AI security operating environment
@@ -96,7 +109,7 @@ jobs:
           Priority: optional
           EOF
 
-          dpkg-deb --build deb raskolnikov_${{ env.RELEASE_TAG }}_$ARCH.deb
+          dpkg-deb --build deb raskolnikov_${{ env.DEB_VERSION }}_$ARCH.deb
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
@@ -104,7 +117,7 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
             dist/raskolnikov-${{ env.RELEASE_TAG }}-${{ matrix.artifact-suffix }}.tar.gz
-            raskolnikov_${{ env.RELEASE_TAG }}_*.deb
+            raskolnikov_${{ env.DEB_VERSION }}_*.deb
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
