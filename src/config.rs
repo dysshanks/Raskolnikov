@@ -31,6 +31,8 @@ pub struct Config {
     pub ui: UiConfig,
     #[serde(default)]
     pub network: NetworkConfig,
+    #[serde(default)]
+    pub colors: ColorScheme,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -287,6 +289,53 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColorScheme {
+    #[serde(default = "default_accent")]
+    pub accent: String,
+    #[serde(default = "default_surface")]
+    pub surface: String,
+    #[serde(default = "default_highlight")]
+    pub highlight: String,
+}
+
+impl Default for ColorScheme {
+    fn default() -> Self {
+        Self {
+            accent: default_accent(),
+            surface: default_surface(),
+            highlight: default_highlight(),
+        }
+    }
+}
+
+fn default_accent() -> String {
+    "red".to_string()
+}
+fn default_surface() -> String {
+    "dark_gray".to_string()
+}
+fn default_highlight() -> String {
+    "red".to_string()
+}
+
+pub fn parse_color(s: &str) -> ratatui::style::Color {
+    match s.to_lowercase().as_str() {
+        "reset" => ratatui::style::Color::Reset,
+        "black" => ratatui::style::Color::Black,
+        "red" => ratatui::style::Color::Red,
+        "green" => ratatui::style::Color::Green,
+        "yellow" => ratatui::style::Color::Yellow,
+        "blue" => ratatui::style::Color::Blue,
+        "magenta" => ratatui::style::Color::Magenta,
+        "cyan" => ratatui::style::Color::Cyan,
+        "white" => ratatui::style::Color::White,
+        "gray" | "grey" => ratatui::style::Color::Gray,
+        "dark_gray" | "darkgray" | "darkgrey" | "dark_grey" => ratatui::style::Color::DarkGray,
+        _ => ratatui::style::Color::White,
+    }
+}
+
 pub struct ApiKeys {
     pub anthropic: Option<String>,
     pub openai: Option<String>,
@@ -325,10 +374,7 @@ pub fn data_dir() -> PathBuf {
     if let Ok(path) = std::env::var("RASKOLNIKOV_DATA") {
         return PathBuf::from(path);
     }
-    if let Some(home) = home_dir() {
-        return home.join(".local/share/raskolnikov");
-    }
-    PathBuf::from("/var/lib/raskolnikov")
+    std::env::temp_dir().join("raskolnikov")
 }
 
 fn home_dir() -> Option<PathBuf> {

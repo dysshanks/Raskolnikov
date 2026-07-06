@@ -1,6 +1,7 @@
 pub mod app;
-pub mod input;
+pub mod input_handler;
 pub mod layout;
+pub mod tool_handler;
 
 async fn prompt_ollama_unreachable(
     config: &mut crate::config::Config,

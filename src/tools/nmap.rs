@@ -85,7 +85,7 @@ pub fn parse_nmap_xml(xml: &str) -> Vec<NmapPort> {
             }
             Ok(Event::Eof) => break,
             Err(e) => {
-                eprintln!("XML parse error: {}", e);
+                tracing::warn!("XML parse error: {}", e);
                 break;
             }
             _ => {}

@@ -71,3 +71,4 @@ Fix all warnings. No dead code.
 - Never log API keys, session data, or findings
 - Session files get 0600 permissions. No telemetry. No phone-home.
 - The tool is for **authorised** security testing only. Developers assume no liability for misuse.
+

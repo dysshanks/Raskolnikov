@@ -1,6 +1,7 @@
 use super::{Message, Provider, ProviderResponse};
 use async_trait::async_trait;
 
+#[derive(Debug, Clone)]
 pub struct NousProvider {
     api_key: String,
     model: String,
@@ -12,7 +13,7 @@ impl NousProvider {
         Self {
             api_key: api_key.to_string(),
             model: model.to_string(),
-            client: reqwest::Client::new(),
+            client: super::http_client(),
         }
     }
 }

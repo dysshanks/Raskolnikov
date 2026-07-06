@@ -9,3 +9,6 @@ target/
 session/
 *.deb
 *.tar.gz
+localhost-open-ports.txt
+nmap-result.txt
+output/

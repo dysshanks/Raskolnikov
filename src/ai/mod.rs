@@ -6,6 +6,7 @@ pub mod openrouter;
 
 use crate::config;
 use async_trait::async_trait;
+use tokio::sync::mpsc;
 
 #[derive(Debug, Clone)]
 pub enum Role {
@@ -69,8 +70,32 @@ pub trait Provider: Send + Sync {
         &self,
         messages: &[Message],
     ) -> Result<ProviderResponse, Box<dyn std::error::Error>>;
+
+    async fn chat_stream(
+        &self,
+        messages: &[Message],
+        tx: mpsc::UnboundedSender<String>,
+    ) -> Result<ProviderResponse, Box<dyn std::error::Error>> {
+        let resp = self.chat(messages).await?;
+        let _ = tx.send(resp.content.clone());
+        Ok(resp)
+    }
 }
 
+pub(crate) fn http_client() -> reqwest::Client {
+    use std::sync::OnceLock;
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("Failed to create HTTP client")
+        })
+        .clone()
+}
+
+#[derive(Debug, Clone)]
 pub enum ProviderKind {
     Ollama(ollama::OllamaProvider),
     Anthropic(anthropic::AnthropicProvider),
@@ -101,6 +126,20 @@ impl Provider for ProviderKind {
             ProviderKind::OpenAi(p) => p.chat(messages).await,
             ProviderKind::OpenRouter(p) => p.chat(messages).await,
             ProviderKind::Nous(p) => p.chat(messages).await,
+        }
+    }
+
+    async fn chat_stream(
+        &self,
+        messages: &[Message],
+        tx: mpsc::UnboundedSender<String>,
+    ) -> Result<ProviderResponse, Box<dyn std::error::Error>> {
+        match self {
+            ProviderKind::Ollama(p) => p.chat_stream(messages, tx).await,
+            ProviderKind::Anthropic(p) => p.chat_stream(messages, tx).await,
+            ProviderKind::OpenAi(p) => p.chat_stream(messages, tx).await,
+            ProviderKind::OpenRouter(p) => p.chat_stream(messages, tx).await,
+            ProviderKind::Nous(p) => p.chat_stream(messages, tx).await,
         }
     }
 }

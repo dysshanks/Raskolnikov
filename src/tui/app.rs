@@ -1,22 +1,59 @@
 use crate::agent::shell::AgentShell;
-use crate::ai::{Message, Provider, ProviderKind};
+use crate::ai::{Message, Provider, ProviderKind, ProviderResponse};
+use crate::config;
 use crate::session::logger::SessionLogger;
 use crate::session::transcript::{Transcript, TranscriptEntry};
 use crate::tools::executor::ToolRunResult;
+
 use chrono::Utc;
-use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers,
-};
+use crossterm::event::{self, Event, KeyCode};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ratatui::backend::{Backend, CrosstermBackend};
+use ratatui::style::Color;
 use ratatui::Terminal;
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
+
+pub struct Colors {
+    pub accent: Color,
+    pub surface: Color,
+    pub highlight: Color,
+}
+
+impl Colors {
+    pub fn from_config(cs: &config::ColorScheme) -> Self {
+        Self {
+            accent: config::parse_color(&cs.accent),
+            surface: config::parse_color(&cs.surface),
+            highlight: config::parse_color(&cs.highlight),
+        }
+    }
+}
+
+pub struct CommandDef {
+    pub name: &'static str,
+    pub description: &'static str,
+}
+
+pub(crate) const COMMANDS: &[CommandDef] = &[
+    CommandDef {
+        name: "/findings <tag>",
+        description: "Tag a security finding",
+    },
+    CommandDef {
+        name: "/island",
+        description: "Toggle the info island",
+    },
+    CommandDef {
+        name: "/quit",
+        description: "End the session",
+    },
+];
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AppState {
@@ -27,22 +64,14 @@ pub enum AppState {
     ConfirmQuit,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PanelFocus {
-    ToolOutput,
-    Conversation,
-}
-
 pub struct App {
     pub state: AppState,
-    pub focus: PanelFocus,
     pub input: String,
     pub queued_message: Option<String>,
     pub conversation: Vec<String>,
-    pub tool_output: Vec<String>,
     pub findings: Vec<String>,
-    pub scroll_offset_tool: usize,
     pub scroll_offset_conv: usize,
+    pub auto_scroll: bool,
     pub provider: Option<ProviderKind>,
     pub agent_shell: AgentShell,
     pub logger: Option<SessionLogger>,
@@ -60,6 +89,20 @@ pub struct App {
     pub transcript_entries: Vec<TranscriptEntry>,
     pub provider_name: String,
     pub model_name: String,
+    pub tool_output_rx: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    pub streaming_rx: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    pub stream_done_rx: Option<tokio::sync::oneshot::Receiver<Result<ProviderResponse, String>>>,
+    pub toast: Option<(String, Instant)>,
+    pub frame_count: u64,
+    pub input_history: Vec<String>,
+    pub history_index: Option<usize>,
+    pub history_saved: String,
+    pub show_island: bool,
+    pub tool_count: u64,
+    pub tool_outputs: Vec<(String, String)>,
+    pub filtered_commands: Vec<usize>,
+    pub selected_command: usize,
+    pub colors: Colors,
 }
 
 impl App {
@@ -71,6 +114,7 @@ impl App {
         session_id: String,
         session_dir: PathBuf,
     ) -> Self {
+        let colors = Colors::from_config(&config.colors);
         let model_name = config.ai.model.clone();
         let provider_name = provider
             .as_ref()
@@ -80,14 +124,12 @@ impl App {
 
         let mut app = Self {
             state: AppState::Idle,
-            focus: PanelFocus::Conversation,
             input: String::new(),
             queued_message: None,
             conversation: Vec::new(),
-            tool_output: Vec::new(),
             findings: Vec::new(),
-            scroll_offset_tool: 0,
             scroll_offset_conv: 0,
+            auto_scroll: true,
             provider,
             agent_shell,
             logger,
@@ -105,6 +147,20 @@ impl App {
             transcript_entries: Vec::new(),
             provider_name,
             model_name,
+            tool_output_rx: None,
+            streaming_rx: None,
+            stream_done_rx: None,
+            toast: None,
+            frame_count: 0,
+            input_history: Vec::new(),
+            history_index: None,
+            history_saved: String::new(),
+            show_island: true,
+            tool_count: 0,
+            tool_outputs: Vec::new(),
+            filtered_commands: Vec::new(),
+            selected_command: 0,
+            colors,
         };
 
         if let Some(logger) = &mut app.logger {
@@ -117,8 +173,7 @@ impl App {
     pub async fn run(&mut self) {
         enable_raw_mode().expect("Failed to enable raw mode");
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
-            .expect("Failed to enter alternate screen");
+        execute!(stdout, EnterAlternateScreen).expect("Failed to enter alternate screen");
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).expect("Failed to create terminal");
@@ -126,12 +181,8 @@ impl App {
         let res = self.run_loop(&mut terminal).await;
 
         disable_raw_mode().expect("Failed to disable raw mode");
-        execute!(
-            terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )
-        .expect("Failed to leave alternate screen");
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)
+            .expect("Failed to leave alternate screen");
         terminal.show_cursor().expect("Failed to show cursor");
 
         self.save_session();
@@ -143,14 +194,67 @@ impl App {
     async fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
         loop {
             terminal.draw(|f| {
-                let chunks = crate::tui::layout::create_layout(f);
-                crate::tui::layout::render(self, f, chunks);
+                crate::tui::layout::render(self, f);
             })?;
+
+            if let Some(rx) = &mut self.tool_output_rx {
+                while let Ok(line) = rx.try_recv() {
+                    self.conversation.push(format!("│ {}", line));
+                    self.scroll_offset_conv = self.conversation.len();
+                    self.auto_scroll = true;
+                }
+            }
 
             self.check_tool_completion().await;
 
-            if self.processing && self.state != AppState::ToolRunning {
-                self.process_ai().await;
+            if self.processing && self.state != AppState::ToolRunning && self.streaming_rx.is_none()
+            {
+                self.start_ai_stream();
+            }
+
+            if let Some(rx) = &mut self.streaming_rx {
+                while let Ok(token) = rx.try_recv() {
+                    if let Some(last) = self.conversation.last_mut() {
+                        last.push_str(&token);
+                    }
+                    self.scroll_offset_conv = self.conversation.len();
+                    self.auto_scroll = true;
+                }
+            }
+
+            if let Some(rx) = &mut self.stream_done_rx {
+                match rx.try_recv() {
+                    Ok(Ok(response)) => {
+                        self.streaming_rx = None;
+                        self.stream_done_rx = None;
+                        self.processing = false;
+                        let content = response.content.trim().to_string();
+                        if !content.is_empty() {
+                            self.messages.push(Message::assistant(&content));
+                            if let Some(logger) = &mut self.logger {
+                                logger.agent_message(&content);
+                            }
+                            let ts = Utc::now().format("%H:%M:%S").to_string();
+                            self.transcript_entries.push(TranscriptEntry::Agent {
+                                ts,
+                                content: content.clone(),
+                            });
+                            self.parse_tool_suggestion(&content);
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        self.streaming_rx = None;
+                        self.stream_done_rx = None;
+                        self.processing = false;
+                        self.conversation.push(format!("[system] {}", e));
+                    }
+                    Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
+                    Err(_) => {
+                        self.streaming_rx = None;
+                        self.stream_done_rx = None;
+                        self.processing = false;
+                    }
+                }
             }
 
             if self.state == AppState::ToolRunning && self.tool_rx.is_none() {
@@ -159,40 +263,90 @@ impl App {
                 }
             }
 
-            if !self.processing && self.state == AppState::Idle {
+            if !self.processing && self.state == AppState::Idle && self.streaming_rx.is_none() {
                 if let Some(msg) = self.queued_message.take() {
                     self.submit_message(msg);
                 }
             }
 
-            if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    if self.state == AppState::ConfirmQuit {
-                        match key.code {
-                            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
-                                return Ok(());
-                            }
-                            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                                self.state = AppState::Idle;
-                            }
-                            _ => {}
-                        }
-                        continue;
-                    }
+            if let Some((_, time)) = &self.toast {
+                if time.elapsed() > Duration::from_secs(3) {
+                    self.toast = None;
+                }
+            }
 
-                    if let Err(e) = self.handle_key(key) {
-                        self.conversation.push(format!("[system] Error: {}", e));
+            self.frame_count += 1;
+
+            if event::poll(Duration::from_millis(100))? {
+                match event::read()? {
+                    Event::Mouse(_) => {}
+                    Event::Key(key) => {
+                        if self.state == AppState::ConfirmQuit {
+                            match key.code {
+                                KeyCode::Char('y')
+                                | KeyCode::Char('Y')
+                                | KeyCode::Enter
+                                | KeyCode::Tab => {
+                                    return Ok(());
+                                }
+                                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                    self.state = AppState::Idle;
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        if self.state == AppState::AwaitingConfirm {
+                            match key.code {
+                                KeyCode::Char('y')
+                                | KeyCode::Char('Y')
+                                | KeyCode::Enter
+                                | KeyCode::Tab => {
+                                    self.state = AppState::ToolRunning;
+                                }
+                                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                    self.pending_tool = None;
+                                    self.pending_command = None;
+                                    self.state = AppState::Idle;
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
+
+                        if let Err(e) = self.handle_key(key) {
+                            self.conversation.push(format!("[system] Error: {}", e));
+                        }
                     }
+                    _ => {}
                 }
             }
         }
     }
 
-    fn submit_message(&mut self, msg: String) {
+    pub(crate) fn submit_message(&mut self, msg: String) {
         let trimmed = msg.trim().to_string();
         if trimmed.is_empty() {
             return;
         }
+
+        if trimmed == "/island" {
+            self.show_island = !self.show_island;
+            return;
+        }
+
+        if let Some(finding) = trimmed.strip_prefix("/findings ") {
+            let finding = finding.trim().to_string();
+            if !finding.is_empty() {
+                self.findings.push(finding.clone());
+                self.conversation
+                    .push(format!("[system] Finding tagged: {}", finding));
+                self.toast = Some((format!("✓ Finding tagged: {}", finding), Instant::now()));
+            }
+            return;
+        }
+
         if self.processing {
             self.queued_message = Some(trimmed);
             return;
@@ -214,175 +368,43 @@ impl App {
         self.processing = true;
     }
 
-    async fn process_ai(&mut self) {
-        self.processing = false;
-
-        let provider = match &self.provider {
+    fn start_ai_stream(&mut self) {
+        let provider = match self.provider.clone() {
             Some(p) => p,
             None => {
                 self.conversation.push(
                     "[system] No AI provider. Configure one in config.toml or set API keys."
                         .to_string(),
                 );
+                self.processing = false;
                 return;
             }
         };
 
-        let mut ai_messages = Vec::new();
-        ai_messages.push(Message::system(self.agent_shell.build_prompt()));
-        ai_messages.extend(self.messages.clone());
+        let system_prompt = self.agent_shell.build_prompt();
+        let history = self.messages.clone();
 
-        match provider.chat(&ai_messages).await {
-            Ok(response) => {
-                let content = response.content.trim().to_string();
-                if content.is_empty() {
-                    return;
-                }
+        let (token_tx, token_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        self.streaming_rx = Some(token_rx);
+        self.stream_done_rx = Some(done_rx);
+        self.conversation.push("agent: ".to_string());
+        self.scroll_offset_conv = self.conversation.len();
+        self.auto_scroll = true;
 
-                self.conversation.push(format!("agent: {}", content));
-                self.messages.push(Message::assistant(&content));
-
-                if let Some(logger) = &mut self.logger {
-                    logger.agent_message(&content);
-                }
-
-                let ts = Utc::now().format("%H:%M:%S").to_string();
-                self.transcript_entries.push(TranscriptEntry::Agent {
-                    ts,
-                    content: content.clone(),
-                });
-
-                self.parse_tool_suggestion(&content);
-            }
-            Err(e) => {
-                let err_msg = format!("AI error: {}", e);
-                self.conversation.push(format!("[system] {}", err_msg));
-            }
-        }
-    }
-
-    fn parse_tool_suggestion(&mut self, response: &str) {
-        let trimmed = response.trim();
-        if !trimmed.ends_with("— run this?") && !trimmed.ends_with("-- run this?") {
-            return;
-        }
-
-        let re = regex::Regex::new(r"```(?:\w+\n)?([^`]+)```").unwrap();
-        let caps: Vec<_> = re.captures_iter(response).collect();
-
-        if let Some(cap) = caps.last() {
-            let command = cap[1].trim().to_string();
-            if command.is_empty() {
-                return;
-            }
-
-            let tool_name = command.split_whitespace().next().unwrap_or("").to_string();
-            if tool_name.is_empty() {
-                return;
-            }
-
-            self.pending_tool = Some(tool_name);
-            self.pending_command = Some(command);
-            self.state = AppState::AwaitingConfirm;
-        }
-    }
-
-    fn spawn_tool(&mut self, command: String) {
-        let tool_name = self
-            .pending_tool
-            .take()
-            .unwrap_or_else(|| command.split_whitespace().next().unwrap_or("?").to_string());
-
-        if let Some(logger) = &mut self.logger {
-            logger.tool_start(&tool_name, &command);
-        }
-
-        self.conversation
-            .push(format!("[system] Running: {}", command));
-
-        let interrupt_rx = self.interrupt_tx.subscribe();
-        let cmd_clone = command.clone();
-
-        let (tx, rx) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
-            let parts: Vec<&str> = cmd_clone.split_whitespace().collect();
-            let result = if parts.is_empty() {
-                ToolRunResult {
-                    exit_code: Some(-1),
-                    stdout: String::new(),
-                    stderr: "Empty command".to_string(),
-                    duration: Duration::default(),
-                    was_interrupted: false,
+            let mut ai_messages = Vec::new();
+            ai_messages.push(Message::system(system_prompt));
+            ai_messages.extend(history);
+            match provider.chat_stream(&ai_messages, token_tx).await {
+                Ok(response) => {
+                    let _ = done_tx.send(Ok(response));
                 }
-            } else {
-                crate::tools::executor::run_tool(parts[0], &parts[1..], interrupt_rx).await
-            };
-            let _ = tx.send(result);
-        });
-
-        self.tool_rx = Some(rx);
-        self.tool_name = Some(tool_name);
-        self.state = AppState::ToolRunning;
-    }
-
-    async fn check_tool_completion(&mut self) {
-        let rx = match &mut self.tool_rx {
-            Some(rx) => rx,
-            None => return,
-        };
-
-        let result = match rx.try_recv() {
-            Ok(result) => result,
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty) => return,
-            Err(_) => {
-                self.tool_rx = None;
-                self.state = AppState::Idle;
-                return;
+                Err(e) => {
+                    let _ = done_tx.send(Err(format!("AI error: {}", e)));
+                }
             }
-        };
-
-        self.tool_rx = None;
-        let tool = self.tool_name.take().unwrap_or_default();
-
-        if !result.stdout.is_empty() {
-            self.tool_output.push(result.stdout.clone());
-        }
-        if !result.stderr.is_empty() {
-            self.tool_output.push(format!("stderr: {}", result.stderr));
-        }
-
-        if let Some(logger) = &mut self.logger {
-            logger.tool_end(
-                &tool,
-                result.exit_code.unwrap_or(-1),
-                result.duration.as_secs(),
-            );
-        }
-
-        let ts = Utc::now().format("%H:%M:%S").to_string();
-        let output = format!("stdout:\n{}\nstderr:\n{}", result.stdout, result.stderr);
-        self.transcript_entries.push(TranscriptEntry::Tool {
-            ts,
-            tool: tool.clone(),
-            duration: result.duration.as_secs(),
-            output: output.clone(),
         });
-
-        if result.was_interrupted {
-            self.state = AppState::Interrupted;
-            self.conversation
-                .push("[system] Tool interrupted".to_string());
-        } else {
-            let code = result.exit_code.unwrap_or(-1);
-            let secs = result.duration.as_secs();
-            let output_msg = format!(
-                "Tool `{}` finished (exit code {}, {}s):\n{}",
-                tool, code, secs, output
-            );
-            self.messages.push(Message::tool(output_msg, &tool));
-            self.state = AppState::Idle;
-            self.processing = true;
-        }
     }
 
     fn save_session(&mut self) {
@@ -399,6 +421,13 @@ impl App {
         );
 
         let date = Utc::now().format("%Y-%m-%d").to_string();
+        let flags: Vec<crate::session::findings::FlagFinding> = self
+            .findings
+            .iter()
+            .map(|f| crate::session::findings::FlagFinding {
+                description: f.clone(),
+            })
+            .collect();
         let _ = crate::session::findings::FindingsExport::write(
             &findings_path,
             &date,
@@ -406,129 +435,147 @@ impl App {
             &self.provider_name,
             &[],
             &[],
-            &[],
+            &flags,
         );
+
+        let output_dir = self.session_dir.join("output");
+        if output_dir.exists() {
+            let _ = std::fs::remove_dir_all(&output_dir);
+        }
+
+        let log_path = self.session_dir.join("session.log");
+        if log_path.exists() {
+            let _ = std::fs::remove_file(&log_path);
+        }
 
         let elapsed = self.start_time.elapsed().as_secs();
         if let Some(logger) = &mut self.logger {
             logger.session_end(elapsed);
         }
     }
+}
 
-    pub fn handle_key(&mut self, key: event::KeyEvent) -> Result<(), String> {
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            return match key.code {
-                KeyCode::Char('c') => {
-                    match self.state {
-                        AppState::ToolRunning => {
-                            let _ = self.interrupt_tx.send(true);
-                            self.state = AppState::Interrupted;
-                            self.conversation
-                                .push("[system] Tool interrupted by operator".to_string());
-                        }
-                        _ => {
-                            self.state = AppState::ConfirmQuit;
-                        }
-                    }
-                    Ok(())
-                }
-                KeyCode::Char('l') => {
-                    self.tool_output.clear();
-                    self.scroll_offset_tool = 0;
-                    Ok(())
-                }
-                _ => Ok(()),
-            };
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::shell::AgentShell;
+    use std::path::PathBuf;
 
-        match key.code {
-            KeyCode::Enter => {
-                let input = std::mem::take(&mut self.input);
-                if input.trim().is_empty() {
-                    return Ok(());
-                }
+    fn make_app() -> App {
+        App::new_with(
+            None,
+            AgentShell::new(vec!["nmap".to_string()]),
+            None,
+            config::Config::default(),
+            "test-session".to_string(),
+            PathBuf::from("/tmp"),
+        )
+    }
 
-                if input.trim() == "/quit" {
-                    self.state = AppState::ConfirmQuit;
-                    return Ok(());
-                }
+    #[test]
+    fn test_new_with_sets_initial_state() {
+        let app = make_app();
+        assert_eq!(app.state, AppState::Idle);
+        assert!(app.input.is_empty());
+        assert!(app.conversation.is_empty());
+        assert!(app.findings.is_empty());
+        assert!(app.auto_scroll);
+        assert!(app.show_island);
+        assert_eq!(app.tool_count, 0);
+    }
 
-                match self.state {
-                    AppState::Idle => {
-                        self.submit_message(input);
-                        Ok(())
-                    }
-                    AppState::AwaitingConfirm => {
-                        let trimmed = input.trim().to_lowercase();
-                        if trimmed == "yes" || trimmed == "y" || trimmed == "go ahead" {
-                            self.state = AppState::ToolRunning;
-                            Ok(())
-                        } else {
-                            self.pending_tool = None;
-                            self.pending_command = None;
-                            self.conversation.push(format!("you: {}", input));
-                            self.state = AppState::Idle;
-                            self.submit_message(input);
-                            Ok(())
-                        }
-                    }
-                    AppState::Interrupted => {
-                        self.state = AppState::Idle;
-                        let _ = self.interrupt_tx.send(false);
-                        if !input.trim().is_empty() {
-                            self.submit_message(input);
-                        }
-                        Ok(())
-                    }
-                    AppState::ToolRunning => {
-                        self.queued_message = Some(input);
-                        Ok(())
-                    }
-                    AppState::ConfirmQuit => Ok(()),
-                }
-            }
-            KeyCode::Char(c) => {
-                self.input.push(c);
-                Ok(())
-            }
-            KeyCode::Backspace => {
-                self.input.pop();
-                Ok(())
-            }
-            KeyCode::Tab => {
-                self.focus = match self.focus {
-                    PanelFocus::ToolOutput => PanelFocus::Conversation,
-                    PanelFocus::Conversation => PanelFocus::ToolOutput,
-                };
-                Ok(())
-            }
-            KeyCode::PageUp => {
-                match self.focus {
-                    PanelFocus::ToolOutput => {
-                        self.scroll_offset_tool = self.scroll_offset_tool.saturating_add(10);
-                    }
-                    PanelFocus::Conversation => {
-                        self.scroll_offset_conv = self.scroll_offset_conv.saturating_add(10);
-                    }
-                }
-                Ok(())
-            }
-            KeyCode::PageDown => {
-                match self.focus {
-                    PanelFocus::ToolOutput => {
-                        self.scroll_offset_tool = self.scroll_offset_tool.saturating_sub(10);
-                    }
-                    PanelFocus::Conversation => {
-                        self.scroll_offset_conv = self.scroll_offset_conv.saturating_sub(10);
-                    }
-                }
-                Ok(())
-            }
-            KeyCode::Esc => {
-                let _input = std::mem::take(&mut self.input);
-                Ok(())
-            }
-            _ => Ok(()),
+    #[test]
+    fn test_new_with_sets_names() {
+        let app = make_app();
+        assert_eq!(app.provider_name, "none");
+        assert_eq!(app.model_name, config::Config::default().ai.model);
+    }
+
+    #[test]
+    fn test_colors_from_config() {
+        let cs = config::ColorScheme {
+            accent: "green".to_string(),
+            surface: "gray".to_string(),
+            highlight: "yellow".to_string(),
+        };
+        let colors = Colors::from_config(&cs);
+        assert_eq!(colors.accent, Color::Green);
+        assert_eq!(colors.highlight, Color::Yellow);
+        assert_eq!(colors.surface, Color::Gray);
+    }
+
+    #[test]
+    fn test_submit_message_island_toggle() {
+        let mut app = make_app();
+        assert!(app.show_island);
+        app.submit_message("/island".to_string());
+        assert!(!app.show_island);
+        app.submit_message("/island".to_string());
+        assert!(app.show_island);
+    }
+
+    #[test]
+    fn test_submit_message_findings_tag() {
+        let mut app = make_app();
+        app.submit_message("/findings open-admin-port".to_string());
+        assert_eq!(app.findings.len(), 1);
+        assert_eq!(app.findings[0], "open-admin-port");
+    }
+
+    #[test]
+    fn test_submit_message_empty_noop() {
+        let mut app = make_app();
+        let before = app.conversation.len();
+        app.submit_message("   ".to_string());
+        assert_eq!(app.conversation.len(), before);
+    }
+
+    #[test]
+    fn test_submit_message_sets_processing() {
+        let mut app = make_app();
+        app.submit_message("scan target".to_string());
+        assert!(app.processing);
+        assert!(!app.conversation.is_empty());
+    }
+
+    #[test]
+    fn test_new_with_with_tool_run_result_type() {
+        let app = make_app();
+        assert!(app.tool_rx.is_none());
+        assert!(app.tool_name.is_none());
+        assert!(app.tool_output_rx.is_none());
+    }
+
+    #[test]
+    fn test_save_session_creates_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = App::new_with(
+            None,
+            AgentShell::new(vec![]),
+            None,
+            config::Config::default(),
+            "save-test".to_string(),
+            dir.path().to_path_buf(),
+        );
+        app.conversation.push("hello".to_string());
+        app.save_session();
+        assert!(dir.path().join("conversation.md").exists());
+        assert!(dir.path().join("findings.md").exists());
+    }
+
+    #[test]
+    fn test_new_with_sets_provider_name() {
+        let provider = crate::ai::resolve_provider(&config::Config::default());
+        if let Some(p) = provider {
+            let app = App::new_with(
+                Some(p),
+                AgentShell::new(vec![]),
+                None,
+                config::Config::default(),
+                "p-test".to_string(),
+                PathBuf::from("/tmp"),
+            );
+            assert_ne!(app.provider_name, "none");
         }
     }
 }
