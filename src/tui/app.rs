@@ -395,7 +395,10 @@ impl App {
             self.update_output_rx = Some(rx);
             self.state = AppState::Updating;
 
-            async fn run_cmd(tx: &tokio::sync::mpsc::UnboundedSender<String>, cmd: &mut Command) -> bool {
+            async fn run_cmd(
+                tx: &tokio::sync::mpsc::UnboundedSender<String>,
+                cmd: &mut Command,
+            ) -> bool {
                 let child = cmd
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped())
@@ -438,7 +441,10 @@ impl App {
                 match status {
                     Ok(s) if s.success() => true,
                     Ok(s) => {
-                        let code = s.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string());
+                        let code = s
+                            .code()
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "unknown".to_string());
                         let _ = tx.send(format!("[system] Exited with code {}", code));
                         false
                     }
@@ -451,30 +457,23 @@ impl App {
 
             tokio::spawn(async move {
                 let _ = tx.send("$ git pull --rebase".to_string());
-                let ok = run_cmd(
-                    &tx,
-                    Command::new("git").args(["pull", "--rebase"]),
-                )
-                .await;
+                let ok = run_cmd(&tx, Command::new("git").args(["pull", "--rebase"])).await;
                 if !ok {
                     let _ = tx.send("[system] Update failed at git pull.".to_string());
                     return;
                 }
 
                 let _ = tx.send("$ cargo build --release".to_string());
-                let ok = run_cmd(
-                    &tx,
-                    Command::new("cargo").args(["build", "--release"]),
-                )
-                .await;
+                let ok = run_cmd(&tx, Command::new("cargo").args(["build", "--release"])).await;
                 if !ok {
                     let _ = tx.send("[system] Update failed at cargo build.".to_string());
                     return;
                 }
 
-                let _ = tx
-                    .send("[system] Build successful! Restart raskolnikov to use the new binary."
-                        .to_string());
+                let _ = tx.send(
+                    "[system] Build successful! Restart raskolnikov to use the new binary."
+                        .to_string(),
+                );
 
                 if update_tools {
                     let _ = tx.send("$ apt-get update && apt-get install...".to_string());
@@ -491,8 +490,7 @@ impl App {
                         if ok {
                             let _ = tx.send("[system] Tools updated.".to_string());
                         } else {
-                            let _ = tx
-                                .send("[system] Tool update failed.".to_string());
+                            let _ = tx.send("[system] Tool update failed.".to_string());
                         }
                     }
                     #[cfg(target_os = "macos")]

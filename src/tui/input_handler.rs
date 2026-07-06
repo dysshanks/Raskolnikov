@@ -123,8 +123,7 @@ impl App {
                     } else {
                         if let Some(&idx) = self.filtered_commands.get(self.selected_command) {
                             let cmd = &COMMANDS[idx];
-                            let base =
-                                cmd.name.split_whitespace().next().unwrap_or(cmd.name);
+                            let base = cmd.name.split_whitespace().next().unwrap_or(cmd.name);
                             self.input = format!("{} ", base);
                             self.filtered_commands.clear();
                         }
