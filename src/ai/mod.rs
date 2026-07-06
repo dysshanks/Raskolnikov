@@ -115,12 +115,7 @@ pub fn summarise_context(messages: &mut [Message]) -> u32 {
         if let Role::Tool = msg.role {
             let lines: Vec<&str> = msg.content.lines().collect();
             if lines.len() > 10 {
-                let summary = lines
-                    .iter()
-                    .take(3)
-                    .copied()
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let summary = lines.iter().take(3).copied().collect::<Vec<_>>().join("\n");
                 msg.content = format!(
                     "[Tool output summarised — {} lines]\n{}\n[...]",
                     lines.len(),
