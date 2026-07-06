@@ -475,16 +475,16 @@ impl App {
                 let dst = std::env::current_exe().ok();
                 if let (true, Some(dst)) = (src.exists(), dst) {
                     if src.canonicalize().ok().as_deref() != Some(&dst) {
-                        match tokio::fs::copy(src, &dst).await {
-                            Ok(_) => {
-                                let _ = tx.send(format!("[system] Updated: {}", dst.display()));
-                            }
-                            Err(e) => {
-                                let _ = tx.send(format!(
-                                    "[system] Could not install binary: {}. The new binary is at target/release/raskolnikov",
-                                    e
-                                ));
-                            }
+                        if tokio::fs::copy(src, &dst).await.is_ok() {
+                            let _ = tx.send(format!("[system] Updated: {}", dst.display()));
+                        } else if run_cmd(&tx, Command::new("sudo").arg("cp").arg(src).arg(&dst))
+                            .await
+                        {
+                            let _ = tx.send(format!("[system] Updated (sudo): {}", dst.display()));
+                        } else {
+                            let _ = tx.send(
+                                "[system] Could not install binary. The new binary is at target/release/raskolnikov".to_string(),
+                            );
                         }
                     }
                 }
