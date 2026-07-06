@@ -1235,8 +1235,8 @@ raskolnikov/
 │   │   ├── openai.rs            (also handles groq, llama-api, together — OAI-compat)
 │   │   ├── openrouter.rs
 │   │   └── nous.rs
+│   ├── session.rs               module root — re-exports
 │   ├── session/
-│   │   ├── mod.rs
 │   │   ├── logger.rs            JSON lines writer
 │   │   ├── transcript.rs        conversation.md writer
 │   │   └── findings.rs          findings.md exporter
