@@ -90,7 +90,7 @@ jobs:
           dpkg-deb --build deb raskolnikov_${{ github.ref_name }}_$ARCH.deb
 
       - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/raskolnikov-${{ github.ref_name }}-${{ matrix.artifact-suffix }}.tar.gz
