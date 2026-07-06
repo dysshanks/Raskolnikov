@@ -477,14 +477,29 @@ impl App {
                     if src.canonicalize().ok().as_deref() != Some(&dst) {
                         if tokio::fs::copy(src, &dst).await.is_ok() {
                             let _ = tx.send(format!("[system] Updated: {}", dst.display()));
-                        } else if run_cmd(&tx, Command::new("sudo").arg("cp").arg(src).arg(&dst))
-                            .await
-                        {
-                            let _ = tx.send(format!("[system] Updated (sudo): {}", dst.display()));
                         } else {
-                            let _ = tx.send(
-                                "[system] Could not install binary. The new binary is at target/release/raskolnikov".to_string(),
-                            );
+                            let local = std::env::var("HOME")
+                                .ok()
+                                .map(|h| PathBuf::from(h).join(".local/bin/raskolnikov"));
+                            if let Some(ref local) = local {
+                                let _ = std::fs::create_dir_all(local.parent().unwrap());
+                                if tokio::fs::copy(src, local).await.is_ok() {
+                                    let _ = tx.send(format!(
+                                        "[system] Copied to {}. Add ~/.local/bin to your PATH.",
+                                        local.display()
+                                    ));
+                                } else {
+                                    let _ = tx.send(
+                                        "[system] Could not install binary. Run manually:\n  sudo cp target/release/raskolnikov <path>"
+                                            .to_string(),
+                                    );
+                                }
+                            } else {
+                                let _ = tx.send(
+                                    "[system] Could not install binary. The new binary is at target/release/raskolnikov"
+                                        .to_string(),
+                                );
+                            }
                         }
                     }
                 }
