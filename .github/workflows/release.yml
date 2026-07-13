@@ -116,7 +116,7 @@ jobs:
           dpkg-deb --build deb raskolnikov_${{ env.DEB_VERSION }}_$ARCH.deb
 
       - name: Upload dist artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: artifacts-${{ matrix.artifact-suffix }}
           path: |
