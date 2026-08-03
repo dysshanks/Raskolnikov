@@ -1,5 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Conversation scrolling** — now line-based (wrapped line counts) instead of
+  element-based, so long multi-line agent responses are no longer clipped and
+  `PgUp` / `PgDn` / mouse-wheel scroll correctly from the bottom.
+- **Text selection / copy** — new `/mouse` command and `ui.mouse` config option
+  to toggle mouse capture; with it off, text in the conversation can be
+  selected and copied with the mouse (keyboard scrolling still works).
+- **AI streaming cut off mid-response** — the shared HTTP client used a 30s
+  *total* request timeout, so long local-model streams (and requests queued
+  behind a busy Ollama model) died with `error decoding response body`. Now a
+  per-read timeout (`network.timeout_secs`, default 60) is used instead, so
+  streams run for as long as the model keeps producing tokens.
+
 ## [0.1.0-alpha] — 2025-06-17
 
 ### Added

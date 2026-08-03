@@ -63,7 +63,7 @@ pub fn create_layout(app: &App, frame: &Frame) -> Vec<Rect> {
     }
 }
 
-pub fn render(app: &App, frame: &mut Frame) {
+pub fn render(app: &mut App, frame: &mut Frame) {
     let chunks = crate::tui::layout::create_layout(app, frame);
     let confirming = app.state == AppState::ConfirmQuit;
     if app.show_island {
@@ -131,8 +131,7 @@ fn decorate_conversation(slice: &[String], streaming: bool, frame_count: u64) ->
     v
 }
 
-fn render_conversation(app: &App, frame: &mut Frame, area: Rect) {
-    let content_height = area.height as usize;
+fn render_conversation(app: &mut App, frame: &mut Frame, area: Rect) {
     let streaming = is_streaming(app);
 
     let block = Block::default()
@@ -140,25 +139,44 @@ fn render_conversation(app: &App, frame: &mut Frame, area: Rect) {
         .border_style(Style::default().fg(app.colors.accent));
     let inner = block.inner(area);
 
-    let raw = if app.conversation.is_empty() {
-        vec![" Ready. Type anything to start.".to_string()]
-    } else if app.auto_scroll || content_height == 0 {
-        let start = app.conversation.len().saturating_sub(inner.height as usize);
-        self::decorate_conversation(&app.conversation[start..], streaming, app.frame_count)
-    } else {
-        let start = app
-            .scroll_offset_conv
-            .min(app.conversation.len().saturating_sub(1));
-        self::decorate_conversation(&app.conversation[start..], streaming, app.frame_count)
-    };
+    if app.conversation.is_empty() {
+        let content = " Ready. Type anything to start.".to_string();
+        let paragraph = Paragraph::new(content)
+            .style(Style::default())
+            .wrap(Wrap { trim: false });
+        frame.render_widget(paragraph, inner);
+        frame.render_widget(block, area);
+        return;
+    }
 
-    let content = raw.join("\n");
+    let view_h = inner.height as usize;
+    if view_h == 0 || inner.width == 0 {
+        return;
+    }
+
+    let decorated = decorate_conversation(&app.conversation, streaming, app.frame_count);
+    let content = decorated.join("\n");
 
     let paragraph = Paragraph::new(content)
         .style(Style::default())
         .wrap(Wrap { trim: false });
 
-    frame.render_widget(paragraph, inner);
+    let total_lines = paragraph.line_count(inner.width);
+    let max_offset = total_lines.saturating_sub(view_h);
+    app.conv_scroll_max = max_offset;
+
+    // usize::MAX means "follow the bottom". A stale offset (e.g. content was
+    // cleared or shrunk) is snapped back to auto-follow so no blank rows show.
+    let offset = if app.scroll_offset_conv == usize::MAX {
+        max_offset
+    } else if app.scroll_offset_conv >= max_offset {
+        app.scroll_offset_conv = usize::MAX;
+        max_offset
+    } else {
+        app.scroll_offset_conv
+    };
+
+    frame.render_widget(paragraph.scroll((offset as u16, 0)), inner);
     frame.render_widget(block, area);
 }
 

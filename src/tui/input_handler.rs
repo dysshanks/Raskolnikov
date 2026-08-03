@@ -88,11 +88,19 @@ impl App {
                 }
                 KeyCode::Char('l') => {
                     self.conversation.clear();
-                    self.scroll_offset_conv = 0;
+                    self.scroll_offset_conv = usize::MAX;
                     Ok(())
                 }
                 KeyCode::Char('o') => {
                     self.show_island = !self.show_island;
+                    Ok(())
+                }
+                KeyCode::Up => {
+                    self.scroll_up(5);
+                    Ok(())
+                }
+                KeyCode::Down => {
+                    self.scroll_down(5);
                     Ok(())
                 }
                 _ => Ok(()),
@@ -143,7 +151,7 @@ impl App {
                             self.input_history.pop();
                         }
                         self.history_index = None;
-                        self.auto_scroll = true;
+                        self.scroll_offset_conv = usize::MAX;
                         self.submit_message(input);
                         Ok(())
                     }
@@ -151,7 +159,7 @@ impl App {
                     AppState::Interrupted => {
                         self.state = AppState::Idle;
                         let _ = self.interrupt_tx.send(false);
-                        self.auto_scroll = true;
+                        self.scroll_offset_conv = usize::MAX;
                         if !input.trim().is_empty() {
                             self.submit_message(input);
                         }
@@ -229,21 +237,11 @@ impl App {
                 Ok(())
             }
             KeyCode::PageUp => {
-                self.auto_scroll = false;
-                self.scroll_offset_conv = self.scroll_offset_conv.saturating_sub(10);
-                self.scroll_offset_conv = self
-                    .scroll_offset_conv
-                    .min(self.conversation.len().saturating_sub(1));
+                self.scroll_up(15);
                 Ok(())
             }
             KeyCode::PageDown => {
-                if self.scroll_offset_conv >= self.conversation.len().saturating_sub(10) {
-                    self.auto_scroll = true;
-                }
-                self.scroll_offset_conv = self.scroll_offset_conv.saturating_add(10);
-                self.scroll_offset_conv = self
-                    .scroll_offset_conv
-                    .min(self.conversation.len().saturating_sub(1));
+                self.scroll_down(15);
                 Ok(())
             }
             KeyCode::Esc => {
@@ -310,7 +308,7 @@ mod tests {
         app.scroll_offset_conv = 5;
         app.handle_key(ctrl(KeyCode::Char('l'))).unwrap();
         assert!(app.conversation.is_empty());
-        assert_eq!(app.scroll_offset_conv, 0);
+        assert_eq!(app.scroll_offset_conv, usize::MAX);
     }
 
     #[test]
@@ -381,20 +379,30 @@ mod tests {
     fn test_handle_key_page_up_scrolls() {
         let mut app = make_app();
         app.conversation = vec!["a".to_string(); 50];
-        app.scroll_offset_conv = 30;
-        app.auto_scroll = true;
+        app.conv_scroll_max = 30;
+        app.scroll_offset_conv = usize::MAX;
         app.handle_key(key(KeyCode::PageUp)).unwrap();
-        assert_eq!(app.scroll_offset_conv, 20);
-        assert!(!app.auto_scroll);
+        assert_eq!(app.scroll_offset_conv, 15);
     }
 
     #[test]
     fn test_handle_key_page_down_scrolls() {
         let mut app = make_app();
-        app.conversation = vec!["a".to_string(); 50];
+        app.conversation = vec!["a".to_string(); 100];
+        app.conv_scroll_max = 90;
         app.scroll_offset_conv = 10;
         app.handle_key(key(KeyCode::PageDown)).unwrap();
-        assert_eq!(app.scroll_offset_conv, 20);
+        assert_eq!(app.scroll_offset_conv, 25);
+    }
+
+    #[test]
+    fn test_handle_key_page_down_returns_to_follow_bottom() {
+        let mut app = make_app();
+        app.conversation = vec!["a".to_string(); 100];
+        app.conv_scroll_max = 90;
+        app.scroll_offset_conv = 96;
+        app.handle_key(key(KeyCode::PageDown)).unwrap();
+        assert_eq!(app.scroll_offset_conv, usize::MAX);
     }
 
     #[test]

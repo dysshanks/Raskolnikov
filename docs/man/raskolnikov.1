@@ -1,0 +1,160 @@
+.TH RASKOLNIKOV 1 "2026-07-25" "raskolnikov 0.1.0" "User Commands"
+.SH NAME
+raskolnikov, rsk, rk \- terminal-native AI security operating environment
+.SH SYNOPSIS
+.B raskolnikov
+.RB [ \-\-version ]
+.RB [ \-\-model
+.IR model ]
+.RB [ \-\-provider
+.IR provider ]
+.br
+.B rsk
+.RB [ OPTIONS ]
+.br
+.B rk
+.RB [ OPTIONS ]
+.br
+.B raskolnikov
+.B sessions
+.IR action
+.RB [ OPTIONS ]
+.br
+.B raskolnikov
+.B config
+.RB [ show | provider | model | set
+.IR key value ]
+.br
+.B raskolnikov
+.B tools
+.SH DESCRIPTION
+.B Raskolnikov
+is a terminal-native, markdown-driven AI security operating environment for authorised penetration testing and CTF competitions.
+It provides an interactive TUI with AI-powered analysis, tool integration, and session management.
+.PP
+The commands
+.BR rsk (1)
+and
+.BR rk (1)
+are symlinks to
+.BR raskolnikov (1).
+.SH OPTIONS
+.TP
+.B \-\-version
+Print version and exit.
+.TP
+.BI \-\-model " model"
+Override the default AI model for this session.
+.TP
+.BI \-\-provider " provider"
+Override the default AI provider for this session.
+Valid values:
+.BR auto ", " ollama ", " anthropic ", " openai ", " openrouter ", " groq ", " nous ", " llama-api ", " together .
+.SH COMMANDS
+.SS sessions
+Manage past session data.
+.TP
+.B sessions list
+List all saved sessions.
+.TP
+.B sessions show \fIID\fR
+Show conversation transcript for session \fIID\fR.
+.TP
+.B sessions findings \fIID\fR
+Show findings summary for session \fIID\fR.
+.TP
+.B sessions log \fIID\fR
+Dump raw JSON session log for session \fIID\fR.
+.TP
+.BI sessions prune " [" --keep N | Nr ]
+Remove old sessions.
+.RS
+.IP \(bu 2
+.B \-\-keep 30
+(default): keep sessions from the last 30 days.
+.IP \(bu 2
+.B \-\-keep 10r
+: keep the 10 most recent sessions.
+.RE
+.TP
+.B sessions recover \fIID\fR
+Recover \fIconversation.md\fR and \fIfindings.md\fR from \fIsession.log\fR.
+.SS config
+View or modify configuration.
+.TP
+.B config show
+Display current configuration as TOML.
+.TP
+.BI config provider " name"
+Set the AI provider.
+.TP
+.BI config model " name"
+Set the default model.
+.TP
+.BI config set " key value"
+Set an arbitrary config key. Supported keys:
+.BR provider ", " model ", " ollama_host ", " nmap_timing ", " prefer_ffuf ", " sqlmap_level ", " sqlmap_risk ", " stream_output ", " alias ", " context_window ", " proxy ", " proxy_https ", " no_proxy ", " use_tmp_data_dir .
+.SS tools
+Check availability and versions of security tools (nmap, gobuster, nikto, sqlmap).
+.SH CONFIGURATION
+Configuration is stored in TOML format at:
+.PP
+.RS 4
+~/.config/raskolnikov/config.toml
+.RE
+.PP
+Override the path with the
+.B RASKOLNIKOV_CONFIG
+environment variable.
+.PP
+API keys are read from environment variables only:
+.BR ANTHROPIC_API_KEY ", " OPENAI_API_KEY ", " OPENROUTER_API_KEY ", " GROQ_API_KEY ", " NOUS_API_KEY ", " LLAMA_API_KEY ", " TOGETHER_API_KEY .
+.SH FILES
+.TP
+.I ~/.config/raskolnikov/config.toml
+Configuration file.
+.TP
+.I ~/.local/share/raskolnikov/sessions/
+Session data directory (default). Override with
+.B RASKOLNIKOV_DATA
+or set
+.B use_tmp_data_dir = true
+in config.
+.SH ENVIRONMENT
+.TP
+.B RASKOLNIKOV_CONFIG
+Override config file path.
+.TP
+.B RASKOLNIKOV_DATA
+Override session data directory.
+.TP
+.BR ANTHROPIC_API_KEY ", " OPENAI_API_KEY ", " etc.
+API keys for cloud AI providers.
+.SH EXAMPLES
+Start with auto-detected provider:
+.PP
+.RS 4
+raskolnikov
+.RE
+.PP
+Start with a specific model:
+.PP
+.RS 4
+raskolnikov \-\-model claude-sonnet-4-6 \-\-provider anthropic
+.RE
+.PP
+Prune sessions older than 7 days:
+.PP
+.RS 4
+rsk sessions prune \-\-keep 7
+.RE
+.PP
+Keep only the 5 most recent sessions:
+.PP
+.RS 4
+rk sessions prune \-\-keep 5r
+.RE
+.SH AUTHOR
+Raskolnikov Security Team
+.SH LICENSE
+Apache-2.0

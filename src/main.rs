@@ -49,9 +49,9 @@ enum SessionsAction {
     Prune {
         #[arg(
             long = "keep",
-            help = "Keep sessions from the last N days (--keep 30) or N most recent (--keep 10)"
+            help = "Keep sessions from the last N days (--keep 30) or N most recent (--keep 10r)"
         )]
-        keep: Option<u32>,
+        keep: Option<String>,
     },
     /// Recover conversation.md and findings.md from session.log
     Recover { id: String },
@@ -84,7 +84,6 @@ async fn main() -> raskolnikov::config::Result<()> {
         Some(Commands::Tools) => handle_tools(),
         None => {
             let mut config = raskolnikov::config::load()?;
-            let _data_dir = raskolnikov::config::init_data_dirs()?;
 
             if let Some(model) = &args.model {
                 config.ai.model = model.clone();
@@ -92,6 +91,8 @@ async fn main() -> raskolnikov::config::Result<()> {
             if let Some(provider) = &args.provider {
                 config.ai.provider = provider.clone();
             }
+
+            let _data_dir = raskolnikov::config::init_data_dirs_for(&config)?;
 
             if !config.cli.alias.is_empty() {
                 create_alias_symlink(&config.cli.alias);
@@ -166,15 +167,11 @@ fn handle_sessions(action: SessionsAction) -> raskolnikov::config::Result<()> {
             Ok(())
         }
         SessionsAction::Prune { keep } => {
-            let days = keep.unwrap_or(30);
             let dir = raskolnikov::config::data_dir().join("sessions");
             if !dir.exists() {
                 println!("No sessions directory found.");
                 return Ok(());
             }
-
-            let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-            let mut pruned = 0u32;
 
             let entries: Vec<_> = std::fs::read_dir(&dir)
                 .map_err(|e| format!("Failed to read sessions: {}", e))?
@@ -182,28 +179,77 @@ fn handle_sessions(action: SessionsAction) -> raskolnikov::config::Result<()> {
                 .filter(|e| e.path().is_dir())
                 .collect();
 
-            for entry in &entries {
-                let name = entry.file_name();
-                let name_str = name.to_string_lossy();
-                if let Ok(ts) =
-                    chrono::NaiveDateTime::parse_from_str(&name_str, "%Y-%m-%dT%H-%M-%S")
-                {
-                    let ts_utc = ts.and_utc();
-                    if ts_utc < cutoff && std::fs::remove_dir_all(entry.path()).is_ok() {
+            let keep_str = keep.as_deref().unwrap_or("30d");
+
+            if keep_str.ends_with('r') || keep_str.ends_with("recent") {
+                let count: u32 = keep_str
+                    .trim_end_matches("recent")
+                    .trim_end_matches('r')
+                    .trim()
+                    .parse()
+                    .map_err(|_| format!("Invalid keep count: {}", keep_str))?;
+
+                let mut parsed: Vec<_> = entries
+                    .iter()
+                    .filter_map(|e| {
+                        let name = e.file_name();
+                        let name_str = name.to_string_lossy().to_string();
+                        chrono::NaiveDateTime::parse_from_str(&name_str, "%Y-%m-%dT%H-%M-%S")
+                            .ok()
+                            .map(|ts| (e.path(), ts.and_utc()))
+                    })
+                    .collect();
+
+                parsed.sort_by_key(|b| std::cmp::Reverse(b.1));
+
+                let mut pruned = 0u32;
+                for (path, _) in parsed.into_iter().skip(count as usize) {
+                    if std::fs::remove_dir_all(path).is_ok() {
                         pruned += 1;
                     }
                 }
-            }
 
-            if pruned == 0 {
-                println!("No sessions older than {} days to prune.", days);
+                if pruned == 0 {
+                    println!("No sessions to prune (keeping {} most recent).", count);
+                } else {
+                    println!(
+                        "Pruned {} session{} (keeping {} most recent).",
+                        pruned,
+                        if pruned == 1 { "" } else { "s" },
+                        count
+                    );
+                }
             } else {
-                println!(
-                    "Pruned {} session{} older than {} days.",
-                    pruned,
-                    if pruned == 1 { "" } else { "s" },
-                    days
-                );
+                let days: u32 = keep_str
+                    .parse()
+                    .map_err(|_| format!("Invalid keep value: {}", keep_str))?;
+
+                let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+                let mut pruned = 0u32;
+
+                for entry in &entries {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if let Ok(ts) =
+                        chrono::NaiveDateTime::parse_from_str(&name_str, "%Y-%m-%dT%H-%M-%S")
+                    {
+                        let ts_utc = ts.and_utc();
+                        if ts_utc < cutoff && std::fs::remove_dir_all(entry.path()).is_ok() {
+                            pruned += 1;
+                        }
+                    }
+                }
+
+                if pruned == 0 {
+                    println!("No sessions older than {} days to prune.", days);
+                } else {
+                    println!(
+                        "Pruned {} session{} older than {} days.",
+                        pruned,
+                        if pruned == 1 { "" } else { "s" },
+                        days
+                    );
+                }
             }
             Ok(())
         }
@@ -280,6 +326,23 @@ fn handle_config(action: Option<ConfigAction>) -> raskolnikov::config::Result<()
                 }
                 "proxy" => config.network.proxy = value.clone(),
                 "proxy_https" => config.network.proxy_https = value.clone(),
+                "timeout_secs" => {
+                    config.network.timeout_secs = value
+                        .parse()
+                        .map_err(|_| format!("Invalid timeout_secs: {}", value))?;
+                }
+                "no_proxy" => {
+                    config.network.no_proxy = value
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                }
+                "use_tmp_data_dir" => {
+                    config.use_tmp_data_dir = value
+                        .parse()
+                        .map_err(|_| format!("Invalid use_tmp_data_dir: {}", value))?;
+                }
                 _ => return Err(format!("Unknown config key: {}", key).into()),
             }
             raskolnikov::config::save(&config)?;

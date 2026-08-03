@@ -22,21 +22,142 @@ fn prompt_first_launch(config: &mut crate::config::Config) {
 
     eprintln!();
     eprintln!("  ┌──────────────────────────────────────────────────────────┐");
-    eprintln!("  │  First launch — choose your default model               │");
+    eprintln!("  │  First launch — choose your AI provider                 │");
     eprintln!("  ├──────────────────────────────────────────────────────────┤");
-    eprintln!("  │  Available models:                                      │");
-    eprintln!("  │    1. qwen3          (local)    [recommended]           │");
-    eprintln!("  │    2. nous-hermes3   (local)                            │");
-    eprintln!("  │    3. deepseek-r1    (local)                            │");
-    eprintln!("  │    4. mistral        (local)                            │");
+    eprintln!("  │    1. Auto (detect from environment)  [recommended]     │");
+    eprintln!("  │    2. Ollama (local, no API key)                       │");
     eprintln!("  │                                                        │");
-    eprintln!("  │  Cloud models (set API key in environment):            │");
-    eprintln!("  │    anthropic, openai, openrouter, groq, nous,          │");
-    eprintln!("  │    llama-api, together                                 │");
+    eprintln!("  │  Cloud providers:                                      │");
+    eprintln!(
+        "  │    3. Anthropic        {}",
+        key_status("ANTHROPIC_API_KEY")
+    );
+    eprintln!(
+        "  │    4. OpenAI           {}",
+        key_status("OPENAI_API_KEY")
+    );
+    eprintln!("  │    5. Groq             {}", key_status("GROQ_API_KEY"));
+    eprintln!(
+        "  │    6. OpenRouter       {}",
+        key_status("OPENROUTER_API_KEY")
+    );
+    eprintln!("  │    7. Nous Research    {}", key_status("NOUS_API_KEY"));
+    eprintln!("  │    8. Llama API        {}", key_status("LLAMA_API_KEY"));
+    eprintln!(
+        "  │    9. Together AI      {}",
+        key_status("TOGETHER_API_KEY")
+    );
     eprintln!("  └──────────────────────────────────────────────────────────┘");
 
+    let provider = loop {
+        eprint!("  Select provider [1]: ");
+        std::io::stderr().flush().ok();
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).ok();
+        let choice = input.trim();
+
+        let p = match choice {
+            "1" | "" => "auto",
+            "2" => "ollama",
+            "3" => "anthropic",
+            "4" => "openai",
+            "5" => "groq",
+            "6" => "openrouter",
+            "7" => "nous",
+            "8" => "llama-api",
+            "9" => "together",
+            other => {
+                if other.is_empty() {
+                    "auto"
+                } else {
+                    eprintln!("  Invalid choice. Enter a number 1-9.");
+                    continue;
+                }
+            }
+        };
+        break p;
+    };
+
+    config.ai.provider = provider.to_string();
+
+    if provider != "ollama" && provider != "auto" {
+        let env_key = match provider {
+            "anthropic" => "ANTHROPIC_API_KEY",
+            "openai" => "OPENAI_API_KEY",
+            "groq" => "GROQ_API_KEY",
+            "openrouter" => "OPENROUTER_API_KEY",
+            "nous" => "NOUS_API_KEY",
+            "llama-api" => "LLAMA_API_KEY",
+            "together" => "TOGETHER_API_KEY",
+            _ => "",
+        };
+        if !env_key.is_empty() && std::env::var(env_key).is_err() {
+            eprintln!();
+            eprintln!("  Warning: {} is not set.", env_key);
+            eprintln!("  Set it before starting: export {}=your-key-here", env_key);
+            eprintln!();
+        }
+    }
+
+    let models = match provider {
+        "anthropic" => vec![
+            ("1", "claude-sonnet-4-6", "recommended"),
+            ("2", "claude-opus-4-6", ""),
+            ("3", "claude-haiku-3-5", "fast"),
+        ],
+        "openai" => vec![
+            ("1", "gpt-4.1", "recommended"),
+            ("2", "o3", ""),
+            ("3", "gpt-4.1-mini", "fast"),
+        ],
+        "groq" => vec![
+            ("1", "llama-4-maverick-17b", "recommended"),
+            ("2", "llama-3.3-70b", ""),
+            ("3", "mixtral-8x7b", "fast"),
+        ],
+        "openrouter" => vec![
+            ("1", "anthropic/claude-sonnet-4", "recommended"),
+            ("2", "openai/gpt-4.1", ""),
+            ("3", "meta-llama/llama-4-maverick", ""),
+        ],
+        "nous" => vec![
+            ("1", "hermes-3-llama-3.1-405b", "recommended"),
+            ("2", "hermes-3-llama-3.1-70b", "fast"),
+        ],
+        "llama-api" => vec![
+            ("1", "llama-4-maverick", "recommended"),
+            ("2", "llama-4-scout", ""),
+        ],
+        "together" => vec![
+            (
+                "1",
+                "meta-llama/Llama-4-Maverick-17B-128E-Instruct",
+                "recommended",
+            ),
+            ("2", "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", ""),
+        ],
+        _ => vec![
+            ("1", "qwen3", "recommended"),
+            ("2", "nous-hermes3", ""),
+            ("3", "deepseek-r1", ""),
+            ("4", "mistral", ""),
+        ],
+    };
+
+    eprintln!();
+    eprintln!("  Available models:");
+    for (num, name, tag) in &models {
+        let tag_str = if tag.is_empty() {
+            String::new()
+        } else {
+            format!("    [{}]", tag)
+        };
+        eprintln!("    {}. {}{}", num, name, tag_str);
+    }
+
     loop {
-        eprint!("  Select default model [1]: ");
+        eprint!("  Select model [1]: ");
         std::io::stderr().flush().ok();
 
         let mut input = String::new();
@@ -44,12 +165,11 @@ fn prompt_first_launch(config: &mut crate::config::Config) {
         let choice = input.trim();
 
         let model = match choice {
-            "1" | "" => "qwen3",
-            "2" => "nous-hermes3",
-            "3" => "deepseek-r1",
-            "4" => "mistral",
+            "1" | "" => models[0].1,
+            "2" => models.get(1).map(|m| m.1).unwrap_or(""),
+            "3" => models.get(2).map(|m| m.1).unwrap_or(""),
+            "4" => models.get(3).map(|m| m.1).unwrap_or(""),
             other => {
-                // Allow typing model name directly
                 if other.contains(' ') || other.is_empty() {
                     eprintln!("  Invalid choice. Enter a number or model name.");
                     continue;
@@ -64,6 +184,13 @@ fn prompt_first_launch(config: &mut crate::config::Config) {
         }
         eprintln!();
         break;
+    }
+}
+
+fn key_status(env_var: &str) -> String {
+    match std::env::var(env_var) {
+        Ok(_) => "\u{2713} key set".to_string(),
+        Err(_) => "\u{2717} no key".to_string(),
     }
 }
 
@@ -155,7 +282,9 @@ fn prompt_fallback_provider(config: &mut crate::config::Config) -> Option<crate:
 }
 
 pub async fn run(config: crate::config::Config) {
-    let data_dir = crate::config::init_data_dirs().unwrap_or_else(|e| {
+    crate::ai::set_http_timeout(config.network.timeout_secs);
+
+    let data_dir = crate::config::init_data_dirs_for(&config).unwrap_or_else(|e| {
         eprintln!("Failed to init data dirs: {}", e);
         std::process::exit(1);
     });

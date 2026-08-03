@@ -1,0 +1,19 @@
+Source: raskolnikov
+Section: utils
+Priority: optional
+Maintainer: Raskolnikov Security Team
+Build-Depends: debhelper-compat (= 13), cargo, rustc, dh-cargo
+Standards-Version: 4.6.2
+Homepage: https://github.com/dysshanks/Raskolnikov
+
+Package: raskolnikov
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, nmap, gobuster, nikto, sqlmap
+Description: Terminal-native AI security operating environment
+ Raskolnikov is a terminal-native, markdown-driven AI security
+ operating environment for authorised penetration testing and CTF
+ competitions. It provides an interactive TUI with AI-powered analysis,
+ tool integration, and session management.
+ .
+ Supports multiple AI providers: Ollama (local), Anthropic, OpenAI,
+ Groq, OpenRouter, Nous Research, Llama API, and Together AI.

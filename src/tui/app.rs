@@ -6,12 +6,12 @@ use crate::session::transcript::{Transcript, TranscriptEntry};
 use crate::tools::executor::ToolRunResult;
 
 use chrono::Utc;
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, MouseEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use ratatui::backend::{Backend, CrosstermBackend};
+use ratatui::backend::CrosstermBackend;
 use ratatui::style::Color;
 use ratatui::Terminal;
 use std::io;
@@ -53,6 +53,10 @@ pub(crate) const COMMANDS: &[CommandDef] = &[
         description: "Toggle the info island",
     },
     CommandDef {
+        name: "/mouse",
+        description: "Toggle mouse capture (text selection/copy)",
+    },
+    CommandDef {
         name: "/quit",
         description: "End the session",
     },
@@ -83,7 +87,6 @@ pub struct App {
     pub conversation: Vec<String>,
     pub findings: Vec<String>,
     pub scroll_offset_conv: usize,
-    pub auto_scroll: bool,
     pub provider: Option<ProviderKind>,
     pub agent_shell: AgentShell,
     pub logger: Option<SessionLogger>,
@@ -116,6 +119,9 @@ pub struct App {
     pub filtered_commands: Vec<usize>,
     pub selected_command: usize,
     pub colors: Colors,
+    pub conv_scroll_max: usize,
+    pub mouse_enabled: bool,
+    pub mouse_capture: bool,
 }
 
 impl App {
@@ -134,6 +140,7 @@ impl App {
             .map(|p| p.name().to_string())
             .unwrap_or_else(|| "none".to_string());
         let (interrupt_tx, _) = watch::channel(false);
+        let mouse_enabled = config.ui.mouse;
 
         let mut app = Self {
             state: AppState::Idle,
@@ -141,8 +148,7 @@ impl App {
             queued_message: None,
             conversation: Vec::new(),
             findings: Vec::new(),
-            scroll_offset_conv: 0,
-            auto_scroll: true,
+            scroll_offset_conv: usize::MAX,
             provider,
             agent_shell,
             logger,
@@ -175,6 +181,9 @@ impl App {
             filtered_commands: Vec::new(),
             selected_command: 0,
             colors,
+            conv_scroll_max: 0,
+            mouse_enabled,
+            mouse_capture: false,
         };
 
         if let Some(logger) = &mut app.logger {
@@ -192,8 +201,21 @@ impl App {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).expect("Failed to create terminal");
 
+        if self.mouse_enabled {
+            execute!(terminal.backend_mut(), crossterm::event::EnableMouseCapture)
+                .expect("Failed to enable mouse capture");
+            self.mouse_capture = true;
+        }
+
         let res = self.run_loop(&mut terminal).await;
 
+        if self.mouse_capture {
+            execute!(
+                terminal.backend_mut(),
+                crossterm::event::DisableMouseCapture
+            )
+            .ok();
+        }
         disable_raw_mode().expect("Failed to disable raw mode");
         execute!(terminal.backend_mut(), LeaveAlternateScreen)
             .expect("Failed to leave alternate screen");
@@ -205,8 +227,25 @@ impl App {
         }
     }
 
-    async fn run_loop<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> io::Result<()> {
+    async fn run_loop(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    ) -> io::Result<()> {
         loop {
+            if self.mouse_enabled != self.mouse_capture {
+                if self.mouse_enabled {
+                    execute!(terminal.backend_mut(), crossterm::event::EnableMouseCapture).ok();
+                    self.mouse_capture = true;
+                } else {
+                    execute!(
+                        terminal.backend_mut(),
+                        crossterm::event::DisableMouseCapture
+                    )
+                    .ok();
+                    self.mouse_capture = false;
+                }
+            }
+
             terminal.draw(|f| {
                 crate::tui::layout::render(self, f);
             })?;
@@ -214,23 +253,23 @@ impl App {
             if let Some(rx) = &mut self.tool_output_rx {
                 while let Ok(line) = rx.try_recv() {
                     self.conversation.push(format!("│ {}", line));
-                    self.scroll_offset_conv = self.conversation.len();
-                    self.auto_scroll = true;
                 }
             }
 
-            if let Some(rx) = self.update_output_rx.as_mut() {
-                while let Ok(line) = rx.try_recv() {
-                    if line == "[update_done]" {
-                        self.conversation
-                            .push("[system] Update complete.".to_string());
-                    } else {
-                        self.conversation.push(line);
+            if self.update_output_rx.is_some() {
+                let mut close = false;
+                if let Some(rx) = self.update_output_rx.as_mut() {
+                    while let Ok(line) = rx.try_recv() {
+                        if line == "[update_done]" {
+                            self.conversation
+                                .push("[system] Update complete.".to_string());
+                        } else {
+                            self.conversation.push(line);
+                        }
                     }
-                    self.scroll_offset_conv = self.conversation.len();
-                    self.auto_scroll = true;
+                    close = rx.is_closed();
                 }
-                if rx.is_closed() {
+                if close {
                     self.update_output_rx = None;
                     self.state = AppState::Idle;
                 }
@@ -248,8 +287,6 @@ impl App {
                     if let Some(last) = self.conversation.last_mut() {
                         last.push_str(&token);
                     }
-                    self.scroll_offset_conv = self.conversation.len();
-                    self.auto_scroll = true;
                 }
             }
 
@@ -259,6 +296,7 @@ impl App {
                         self.streaming_rx = None;
                         self.stream_done_rx = None;
                         self.processing = false;
+                        self.scroll_offset_conv = usize::MAX;
                         let content = response.content.trim().to_string();
                         if !content.is_empty() {
                             self.messages.push(Message::assistant(&content));
@@ -277,6 +315,7 @@ impl App {
                         self.streaming_rx = None;
                         self.stream_done_rx = None;
                         self.processing = false;
+                        self.scroll_offset_conv = usize::MAX;
                         self.conversation.push(format!("[system] {}", e));
                     }
                     Err(tokio::sync::oneshot::error::TryRecvError::Empty) => {}
@@ -284,6 +323,7 @@ impl App {
                         self.streaming_rx = None;
                         self.stream_done_rx = None;
                         self.processing = false;
+                        self.scroll_offset_conv = usize::MAX;
                     }
                 }
             }
@@ -308,9 +348,40 @@ impl App {
 
             self.frame_count += 1;
 
-            if event::poll(Duration::from_millis(100))? {
+            if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
-                    Event::Mouse(_) => {}
+                    Event::Mouse(mouse) => {
+                        if self.state == AppState::AwaitingConfirm
+                            || self.state == AppState::ConfirmQuit
+                            || self.state == AppState::Updating
+                        {
+                            continue;
+                        }
+                        match mouse.kind {
+                            MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                                let mut count: isize = match mouse.kind {
+                                    MouseEventKind::ScrollUp => 1,
+                                    _ => -1,
+                                };
+                                while let Ok(true) = event::poll(Duration::from_millis(0)) {
+                                    match event::read() {
+                                        Ok(Event::Mouse(m)) => match m.kind {
+                                            MouseEventKind::ScrollUp => count += 1,
+                                            MouseEventKind::ScrollDown => count -= 1,
+                                            _ => break,
+                                        },
+                                        _ => break,
+                                    }
+                                }
+                                if count > 0 {
+                                    self.scroll_up((count * 5) as usize);
+                                } else {
+                                    self.scroll_down(count.unsigned_abs() * 5);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                     Event::Key(key) => {
                         if self.state == AppState::ConfirmQuit {
                             match key.code {
@@ -373,6 +444,20 @@ impl App {
 
         if trimmed == "/island" {
             self.show_island = !self.show_island;
+            return;
+        }
+
+        if trimmed == "/mouse" {
+            self.mouse_enabled = !self.mouse_enabled;
+            let state = if self.mouse_enabled { "on" } else { "off" };
+            let hint = if self.mouse_enabled {
+                "mouse scrolling on; copy with Ctrl+Shift+C"
+            } else {
+                "select/copy with the mouse; scroll via PgUp/PgDn"
+            };
+            self.conversation
+                .push(format!("[system] Mouse capture {} — {}", state, hint));
+            self.toast = Some((format!("Mouse capture {}", state), Instant::now()));
             return;
         }
 
@@ -596,8 +681,7 @@ impl App {
         self.streaming_rx = Some(token_rx);
         self.stream_done_rx = Some(done_rx);
         self.conversation.push("agent: ".to_string());
-        self.scroll_offset_conv = self.conversation.len();
-        self.auto_scroll = true;
+        self.scroll_offset_conv = usize::MAX;
 
         tokio::spawn(async move {
             let mut ai_messages = Vec::new();
@@ -612,6 +696,35 @@ impl App {
                 }
             }
         });
+    }
+
+    pub(crate) fn scroll_up(&mut self, lines: usize) {
+        if self.conversation.is_empty() {
+            return;
+        }
+        let current = if self.scroll_offset_conv == usize::MAX {
+            self.conv_scroll_max
+        } else {
+            self.scroll_offset_conv
+        };
+        let new = current.saturating_sub(lines);
+        if new >= self.conv_scroll_max || self.conv_scroll_max == 0 {
+            self.scroll_offset_conv = usize::MAX;
+        } else {
+            self.scroll_offset_conv = new;
+        }
+    }
+
+    pub(crate) fn scroll_down(&mut self, lines: usize) {
+        if self.scroll_offset_conv == usize::MAX {
+            return;
+        }
+        let new = self.scroll_offset_conv.saturating_add(lines);
+        if new >= self.conv_scroll_max {
+            self.scroll_offset_conv = usize::MAX;
+        } else {
+            self.scroll_offset_conv = new;
+        }
     }
 
     fn save_session(&mut self) {
@@ -692,7 +805,7 @@ mod tests {
         assert!(app.input.is_empty());
         assert!(app.conversation.is_empty());
         assert!(app.findings.is_empty());
-        assert!(app.auto_scroll);
+        assert_eq!(app.scroll_offset_conv, usize::MAX);
         assert!(app.show_island);
         assert_eq!(app.tool_count, 0);
     }
@@ -790,5 +903,94 @@ mod tests {
             );
             assert_ne!(app.provider_name, "none");
         }
+    }
+
+    #[test]
+    fn test_scroll_up_from_bottom_starts_at_scroll_max() {
+        let mut app = make_app();
+        app.conversation = vec!["a".to_string(); 50];
+        app.conv_scroll_max = 30;
+        app.scroll_offset_conv = usize::MAX;
+        app.scroll_up(5);
+        assert_eq!(app.scroll_offset_conv, 25);
+    }
+
+    #[test]
+    fn test_scroll_up_at_top_stays_at_top() {
+        let mut app = make_app();
+        app.conversation = vec!["a".to_string(); 50];
+        app.conv_scroll_max = 30;
+        app.scroll_offset_conv = 0;
+        app.scroll_up(5);
+        assert_eq!(app.scroll_offset_conv, 0);
+    }
+
+    #[test]
+    fn test_scroll_up_keeps_follow_bottom_when_nothing_to_scroll() {
+        let mut app = make_app();
+        app.conversation = vec!["a".to_string(); 2];
+        app.conv_scroll_max = 0;
+        app.scroll_offset_conv = usize::MAX;
+        app.scroll_up(5);
+        assert_eq!(app.scroll_offset_conv, usize::MAX);
+    }
+
+    #[test]
+    fn test_scroll_down_from_follow_bottom_is_noop() {
+        let mut app = make_app();
+        app.conversation = vec!["a".to_string(); 50];
+        app.conv_scroll_max = 30;
+        app.scroll_offset_conv = usize::MAX;
+        app.scroll_down(5);
+        assert_eq!(app.scroll_offset_conv, usize::MAX);
+    }
+
+    #[test]
+    fn test_scroll_down_snaps_to_follow_bottom_at_end() {
+        let mut app = make_app();
+        app.conversation = vec!["a".to_string(); 50];
+        app.conv_scroll_max = 30;
+        app.scroll_offset_conv = 28;
+        app.scroll_down(5);
+        assert_eq!(app.scroll_offset_conv, usize::MAX);
+    }
+
+    #[test]
+    fn test_scroll_up_empty_conversation_noop() {
+        let mut app = make_app();
+        app.scroll_up(5);
+        assert_eq!(app.scroll_offset_conv, usize::MAX);
+    }
+
+    #[test]
+    fn test_mouse_enabled_defaults_from_config() {
+        let app = make_app();
+        assert!(app.mouse_enabled);
+        assert!(!app.mouse_capture);
+    }
+
+    #[test]
+    fn test_mouse_enabled_reflects_config() {
+        let mut cfg = config::Config::default();
+        cfg.ui.mouse = false;
+        let app = App::new_with(
+            None,
+            AgentShell::new(vec![]),
+            None,
+            cfg,
+            "mouse-test".to_string(),
+            PathBuf::from("/tmp"),
+        );
+        assert!(!app.mouse_enabled);
+    }
+
+    #[test]
+    fn test_submit_message_mouse_toggle() {
+        let mut app = make_app();
+        assert!(app.mouse_enabled);
+        app.submit_message("/mouse".to_string());
+        assert!(!app.mouse_enabled);
+        app.submit_message("/mouse".to_string());
+        assert!(app.mouse_enabled);
     }
 }

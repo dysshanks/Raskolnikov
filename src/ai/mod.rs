@@ -82,15 +82,29 @@ pub trait Provider: Send + Sync {
     }
 }
 
+static HTTP_TIMEOUT_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(60);
+
+/// Sets the per-read timeout used by the shared HTTP client.
+///
+/// A value of 0 disables the timeout entirely. This must be called before any
+/// provider request is made (it only affects client creation).
+pub fn set_http_timeout(secs: u64) {
+    HTTP_TIMEOUT_SECS.store(secs, std::sync::atomic::Ordering::Relaxed);
+}
+
 pub(crate) fn http_client() -> reqwest::Client {
     use std::sync::OnceLock;
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
-            reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client")
+            let secs = HTTP_TIMEOUT_SECS.load(std::sync::atomic::Ordering::Relaxed);
+            let mut builder = reqwest::Client::builder();
+            // A read timeout (not a total request timeout) so long streaming
+            // responses are never cut off; only a stalled connection is.
+            if secs > 0 {
+                builder = builder.read_timeout(std::time::Duration::from_secs(secs));
+            }
+            builder.build().expect("Failed to create HTTP client")
         })
         .clone()
 }
@@ -182,6 +196,62 @@ pub fn resolve_provider(config: &config::Config) -> Option<ProviderKind> {
     let keys = config::ApiKeys::from_env();
 
     match provider_name.as_str() {
+        "auto" => {
+            if let Some(key) = keys.anthropic {
+                return Some(ProviderKind::Anthropic(anthropic::AnthropicProvider::new(
+                    &config.anthropic.base_url,
+                    &key,
+                    &config.ai.model,
+                )));
+            }
+            if let Some(key) = keys.openai {
+                return Some(ProviderKind::OpenAi(openai::OpenAiProvider::new(
+                    &config.openai.base_url,
+                    &key,
+                    &config.ai.model,
+                    "openai",
+                )));
+            }
+            if let Some(key) = keys.groq {
+                return Some(ProviderKind::OpenAi(openai::OpenAiProvider::new(
+                    &config.groq.base_url,
+                    &key,
+                    &config.ai.model,
+                    "groq",
+                )));
+            }
+            if let Some(key) = keys.openrouter {
+                return Some(ProviderKind::OpenRouter(
+                    openrouter::OpenRouterProvider::new(&key, &config.ai.model),
+                ));
+            }
+            if let Some(key) = keys.nous {
+                return Some(ProviderKind::Nous(nous::NousProvider::new(
+                    &key,
+                    &config.ai.model,
+                )));
+            }
+            if let Some(key) = keys.llama {
+                return Some(ProviderKind::OpenAi(openai::OpenAiProvider::new(
+                    &config.llama_api.base_url,
+                    &key,
+                    &config.ai.model,
+                    "llama-api",
+                )));
+            }
+            if let Some(key) = keys.together {
+                return Some(ProviderKind::OpenAi(openai::OpenAiProvider::new(
+                    &config.together.base_url,
+                    &key,
+                    &config.ai.model,
+                    "together",
+                )));
+            }
+            Some(ProviderKind::Ollama(ollama::OllamaProvider::new(
+                &config.ollama.host,
+                &config.ai.model,
+            )))
+        }
         "ollama" => Some(ProviderKind::Ollama(ollama::OllamaProvider::new(
             &config.ollama.host,
             &config.ai.model,
@@ -253,5 +323,23 @@ mod tests {
         let msg = Message::tool("output", "nmap");
         assert!(matches!(msg.role, Role::Tool));
         assert_eq!(msg.name, Some("nmap".to_string()));
+    }
+
+    #[test]
+    fn test_http_timeout_default_is_60() {
+        assert_eq!(
+            HTTP_TIMEOUT_SECS.load(std::sync::atomic::Ordering::Relaxed),
+            60
+        );
+    }
+
+    #[test]
+    fn test_set_http_timeout_updates_global() {
+        set_http_timeout(120);
+        assert_eq!(
+            HTTP_TIMEOUT_SECS.load(std::sync::atomic::Ordering::Relaxed),
+            120
+        );
+        set_http_timeout(60);
     }
 }

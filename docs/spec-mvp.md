@@ -837,7 +837,9 @@ Terminal-only. Ratatui is the sole UI layer. No web fallback. No exceptions.
 Cleared between tool runs (all output saved to disk). Dimmed when no tool is running.
 
 **Conversation (right):** Full chat history between operator and agent. Scrollable —
-older messages accessible above. Agent responses stream incrementally. Tool invocations
+older messages accessible above (`PgUp`/`PgDn`, `Ctrl+Up/Down`, or the mouse
+wheel). Agent responses stream incrementally. Scrolling is line-based so
+wrapped/multi-line responses can be reached in full. Tool invocations
 shown inline as part of the agent’s message.
 
 **Findings bar:** Persistent strip of confirmed findings across the whole session.
@@ -853,7 +855,9 @@ queued message is kept — typing a second overwrites the first.
 |Key            |Action                            |
 |---------------|----------------------------------|
 |`Enter`        |Send message                      |
-|`PgUp` / `PgDn`|Scroll active panel               |
+|`PgUp` / `PgDn`|Scroll conversation               |
+|`Ctrl+Up/Down` |Scroll conversation               |
+|`/mouse`       |Toggle mouse capture (enables mouse text selection/copy) |
 |`Tab`          |Switch scroll focus between panels|
 |`ctrl+c`       |Prompt to end session             |
 |`ctrl+l`       |Clear tool output panel           |
@@ -1156,11 +1160,13 @@ paths = [
 
 [ui]
 stream_output = true
+mouse = true            # mouse capture; set to false to enable mouse text selection/copy
 
 [network]
 proxy          = ""     # HTTP proxy for AI API calls
 proxy_https    = ""     # HTTPS proxy for AI API calls
 no_proxy       = ["localhost", "127.0.0.1"]
+timeout_secs   = 60     # per-read timeout for AI requests; 0 = no timeout
 ```
 
 All API keys are read from environment variables — never stored in `config.toml`.

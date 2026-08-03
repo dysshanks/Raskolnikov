@@ -33,6 +33,8 @@ pub struct Config {
     pub network: NetworkConfig,
     #[serde(default)]
     pub colors: ColorScheme,
+    #[serde(default = "default_false")]
+    pub use_tmp_data_dir: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -115,6 +117,8 @@ pub struct WordlistsConfig {
 pub struct UiConfig {
     #[serde(default = "default_true")]
     pub stream_output: bool,
+    #[serde(default = "default_true")]
+    pub mouse: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,6 +129,8 @@ pub struct NetworkConfig {
     pub proxy_https: String,
     #[serde(default)]
     pub no_proxy: Vec<String>,
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
 }
 
 impl Default for AiConfig {
@@ -216,6 +222,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             stream_output: default_true(),
+            mouse: default_true(),
         }
     }
 }
@@ -226,12 +233,13 @@ impl Default for NetworkConfig {
             proxy: String::new(),
             proxy_https: String::new(),
             no_proxy: vec!["localhost".to_string(), "127.0.0.1".to_string()],
+            timeout_secs: default_timeout_secs(),
         }
     }
 }
 
 fn default_provider() -> String {
-    "ollama".to_string()
+    "auto".to_string()
 }
 
 fn default_model() -> String {
@@ -294,6 +302,14 @@ fn default_wordlist_paths() -> Vec<String> {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_false() -> bool {
+    false
+}
+
+fn default_timeout_secs() -> u64 {
+    60
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -381,7 +397,23 @@ pub fn data_dir() -> PathBuf {
     if let Ok(path) = std::env::var("RASKOLNIKOV_DATA") {
         return PathBuf::from(path);
     }
-    std::env::temp_dir().join("raskolnikov")
+    if let Some(home) = home_dir() {
+        return home.join(".local/share/raskolnikov");
+    }
+    PathBuf::from("/tmp/raskolnikov")
+}
+
+pub fn data_dir_for_config(config: &Config) -> PathBuf {
+    if let Ok(path) = std::env::var("RASKOLNIKOV_DATA") {
+        return PathBuf::from(path);
+    }
+    if config.use_tmp_data_dir {
+        return std::env::temp_dir().join("raskolnikov");
+    }
+    if let Some(home) = home_dir() {
+        return home.join(".local/share/raskolnikov");
+    }
+    PathBuf::from("/tmp/raskolnikov")
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -446,6 +478,27 @@ pub fn init_data_dirs() -> Result<PathBuf> {
     Ok(dir)
 }
 
+pub fn init_data_dirs_for(config: &Config) -> Result<PathBuf> {
+    let dir = data_dir_for_config(config);
+
+    let sessions_dir = dir.join("sessions");
+    std::fs::create_dir_all(&sessions_dir)
+        .map_err(|e| format!("Failed to create sessions directory: {}", e))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = std::fs::metadata(&dir) {
+            let perm = metadata.permissions();
+            if perm.mode() & 0o077 != 0 {
+                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok();
+            }
+        }
+    }
+
+    Ok(dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,12 +506,15 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = Config::default();
-        assert_eq!(config.ai.provider, "ollama");
+        assert_eq!(config.ai.provider, "auto");
         assert_eq!(config.ai.model, "qwen3");
         assert_eq!(config.ai.context_window, 131072);
         assert_eq!(config.ollama.host, "http://localhost:11434");
         assert!(!config.tools.prefer_ffuf);
         assert_eq!(config.tools.nmap_timing, 4);
+        assert!(!config.use_tmp_data_dir);
+        assert!(config.ui.mouse);
+        assert_eq!(config.network.timeout_secs, 60);
     }
 
     #[test]
@@ -496,5 +552,60 @@ nmap_timing = 3
         assert_eq!(config.ai.model, "claude-sonnet-4-6");
         assert!(config.tools.prefer_ffuf);
         assert_eq!(config.tools.nmap_timing, 3);
+    }
+
+    #[test]
+    fn test_data_dir_default_is_local_share() {
+        temp_env::with_vars(vec![("RASKOLNIKOV_DATA", None::<&str>)], || {
+            let dir = data_dir();
+            let path_str = dir.to_string_lossy();
+            assert!(
+                path_str.contains(".local/share/raskolnikov"),
+                "Expected ~/.local/share/raskolnikov, got: {}",
+                path_str
+            );
+        });
+    }
+
+    #[test]
+    fn test_data_dir_env_override() {
+        temp_env::with_vars(vec![("RASKOLNIKOV_DATA", Some("/tmp/test-rsk"))], || {
+            let dir = data_dir();
+            assert_eq!(dir, PathBuf::from("/tmp/test-rsk"));
+        });
+    }
+
+    #[test]
+    fn test_data_dir_for_config_use_tmp() {
+        let mut config = Config::default();
+        config.use_tmp_data_dir = true;
+        let dir = data_dir_for_config(&config);
+        assert!(dir.to_string_lossy().contains("raskolnikov"));
+        assert!(dir.parent().unwrap().to_string_lossy().contains("tmp"));
+    }
+
+    #[test]
+    fn test_data_dir_for_config_default() {
+        let config = Config::default();
+        let dir = data_dir_for_config(&config);
+        let path_str = dir.to_string_lossy();
+        assert!(
+            path_str.contains(".local/share/raskolnikov"),
+            "Expected ~/.local/share/raskolnikov, got: {}",
+            path_str
+        );
+    }
+
+    #[test]
+    fn test_data_dir_for_config_env_overrides_tmp() {
+        let mut config = Config::default();
+        config.use_tmp_data_dir = true;
+        temp_env::with_vars(
+            vec![("RASKOLNIKOV_DATA", Some("/tmp/env-override"))],
+            || {
+                let dir = data_dir_for_config(&config);
+                assert_eq!(dir, PathBuf::from("/tmp/env-override"));
+            },
+        );
     }
 }

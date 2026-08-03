@@ -176,8 +176,7 @@ impl App {
             self.state = AppState::Idle;
             self.processing = true;
         }
-        self.scroll_offset_conv = self.conversation.len();
-        self.auto_scroll = true;
+        self.scroll_offset_conv = usize::MAX;
     }
 }
 

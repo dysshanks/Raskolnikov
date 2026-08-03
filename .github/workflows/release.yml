@@ -2,212 +2,73 @@ name: Release
 
 on:
   push:
-    branches: [main]
-    tags: ["v*"]
+    tags:
+      - "v*"
 
 permissions:
   contents: write
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact-suffix: x86_64-linux
+            artifact: raskolnikov-linux-x86_64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact-suffix: aarch64-linux
+            artifact: raskolnikov-linux-aarch64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: raskolnikov-macos-x86_64
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact-suffix: aarch64-macos
-
-    runs-on: ${{ matrix.os }}
-
+            artifact: raskolnikov-macos-aarch64
     steps:
       - uses: actions/checkout@v4
-
-      - name: Derive release tag
-        run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG="${{ github.ref_name }}"
-            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
-            echo "DEB_VERSION=${TAG#v}" >> $GITHUB_ENV
-          else
-            echo "RELEASE_TAG=nightly-$(date +%Y%m%d)-${{ github.sha }}" >> $GITHUB_ENV
-            echo "DEB_VERSION=0.1.0~nightly-$(date +%Y%m%d)" >> $GITHUB_ENV
-          fi
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Install cross-compilation deps (Linux ARM64)
-        if: contains(matrix.target, 'linux') && contains(matrix.target, 'aarch64')
-        run: |
-          sudo dpkg --add-architecture arm64
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse" | sudo tee /etc/apt/sources.list.d/arm64.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse" | sudo tee -a /etc/apt/sources.list.d/arm64.list
-          sudo apt-get update || true
-          sudo apt-get install -y gcc-aarch64-linux-gnu dpkg-dev libssl-dev:arm64
-
-      - name: Install deps (Linux x86_64)
-        if: contains(matrix.target, 'linux') && !contains(matrix.target, 'aarch64')
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y dpkg-dev
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      - name: Build release
-        run: cargo build --release --target ${{ matrix.target }}
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_DIR: /usr/lib/aarch64-linux-gnu
-          PKG_CONFIG_ALLOW_CROSS: 1
-          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
-          PKG_CONFIG_SYSROOT_DIR: /
-
-      - name: Prepare archive
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Build
         run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/raskolnikov dist/
-          ln -s raskolnikov dist/rsk
-          ln -s raskolnikov dist/rk
-          cd dist
-          tar czf raskolnikov-${{ env.RELEASE_TAG }}-${{ matrix.artifact-suffix }}.tar.gz raskolnikov rsk rk
-
-      - name: Build .deb package (Linux only)
-        if: contains(matrix.target, 'linux')
-        run: |
-          mkdir -p deb/usr/bin
-          BINARY="target/${{ matrix.target }}/release/raskolnikov"
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            ARCH="arm64"
-          else
-            ARCH="amd64"
+            export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
           fi
-          cp "$BINARY" deb/usr/bin/
-          ln -s raskolnikov deb/usr/bin/rsk
-          ln -s raskolnikov deb/usr/bin/rk
-
-          mkdir -p deb/DEBIAN
-          cat > deb/DEBIAN/control <<EOF
-          Package: raskolnikov
-          Version: ${{ env.DEB_VERSION }}
-          Architecture: $ARCH
-          Maintainer: Raskolnikov Security Team
-          Description: Terminal-native, markdown-driven AI security operating environment
-          License: Apache-2.0
-          Section: utils
-          Priority: optional
-          EOF
-
-          dpkg-deb --build deb raskolnikov_${{ env.DEB_VERSION }}_$ARCH.deb
-
-      - name: Upload dist artifacts
+          cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../${{ matrix.artifact }}.tar.gz raskolnikov
+          cd ../../..
+          chmod +x ${{ matrix.artifact }}.tar.gz
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: artifacts-${{ matrix.artifact-suffix }}
-          path: |
-            dist/raskolnikov-${{ env.RELEASE_TAG }}-${{ matrix.artifact-suffix }}.tar.gz
-            raskolnikov_${{ env.DEB_VERSION }}_*.deb
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
 
   release:
-    needs: [build]
+    name: Create Release
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Derive release tag
-        run: |
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "RELEASE_TAG=${{ github.ref_name }}" >> $GITHUB_ENV
-          else
-            echo "RELEASE_TAG=nightly-$(date +%Y%m%d)-${{ github.sha }}" >> $GITHUB_ENV
-          fi
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: Flatten artifacts for upload
-        run: |
-          mkdir -p upload
-          find artifacts -type f -exec cp {} upload/ \;
-
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: upload/*
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  docker:
-    needs: [build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
-            type=raw,value=nightly,enable=${{ github.ref_type == 'branch' }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  nix:
-    needs: [build]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@v16
-
-      - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v8
-
-      - name: Build Nix package
-        run: nix build
+          files: |
+            artifacts/**/*.tar.gz
