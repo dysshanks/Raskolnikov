@@ -122,10 +122,15 @@ pub fn check_context(messages: &[Message], context_window: u32) -> (bool, u32, f
 }
 
 /// Summarise old tool messages by replacing verbose outputs with a short note.
-/// Never touches system, user, or assistant messages.
-pub fn summarise_context(messages: &mut [Message]) -> u32 {
+/// Never touches system, user, or assistant messages. The last `keep_recent`
+/// messages are left untouched so the model still sees the freshest output.
+pub fn summarise_context(messages: &mut [Message], keep_recent: usize) -> u32 {
     let mut count = 0;
-    for msg in messages.iter_mut() {
+    let boundary = messages.len().saturating_sub(keep_recent);
+    for (i, msg) in messages.iter_mut().enumerate() {
+        if i >= boundary {
+            break;
+        }
         if let Role::Tool = msg.role {
             let lines: Vec<&str> = msg.content.lines().collect();
             if lines.len() > 10 {
@@ -341,5 +346,34 @@ mod tests {
             120
         );
         set_http_timeout(60);
+    }
+
+    #[test]
+    fn test_summarise_keeps_recent_tool_messages() {
+        let mut messages = vec![
+            Message::tool(
+                "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11",
+                "nmap",
+            ),
+            Message::assistant("ok"),
+            Message::tool(
+                "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11",
+                "sqlmap",
+            ),
+        ];
+        let count = summarise_context(&mut messages, 2);
+        assert_eq!(count, 1);
+        assert!(messages[0].content.contains("summarised"));
+        assert!(!messages[2].content.contains("summarised"));
+    }
+
+    #[test]
+    fn test_summarise_all_when_under_recent_boundary() {
+        let mut messages = vec![
+            Message::tool("x\nx\nx\nx\nx\nx\nx\nx\nx\nx\nx", "nmap"),
+            Message::tool("y\ny\ny\ny\ny\ny\ny\ny\ny\ny\ny", "gobuster"),
+        ];
+        let count = summarise_context(&mut messages, 0);
+        assert_eq!(count, 2);
     }
 }

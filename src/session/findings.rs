@@ -17,6 +17,14 @@ pub struct WebPathFinding {
 }
 
 #[derive(Debug, Clone)]
+pub struct CredentialFinding {
+    pub service: String,
+    pub host: String,
+    pub user: String,
+    pub password: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct FlagFinding {
     pub description: String,
 }
@@ -24,6 +32,7 @@ pub struct FlagFinding {
 pub struct FindingsExport;
 
 impl FindingsExport {
+    #[allow(clippy::too_many_arguments)]
     pub fn write(
         path: &Path,
         date: &str,
@@ -31,6 +40,7 @@ impl FindingsExport {
         provider: &str,
         ports: &[PortFinding],
         web_paths: &[WebPathFinding],
+        credentials: &[CredentialFinding],
         flags: &[FlagFinding],
     ) -> Result<(), std::io::Error> {
         let mut md = String::new();
@@ -61,6 +71,19 @@ impl FindingsExport {
                 md.push_str(&format!(
                     "| {} | {} | {} |\n",
                     p.path, p.status_code, p.notes
+                ));
+            }
+            md.push('\n');
+        }
+
+        if !credentials.is_empty() {
+            md.push_str("## Credentials\n");
+            md.push_str("| Service | Host | User | Password |\n");
+            md.push_str("|---------|------|------|----------|\n");
+            for c in credentials {
+                md.push_str(&format!(
+                    "| {} | {} | {} | {} |\n",
+                    c.service, c.host, c.user, c.password
                 ));
             }
             md.push('\n');
@@ -109,6 +132,12 @@ mod tests {
         let flags = vec![FlagFinding {
             description: "MySQL exposed directly to network".to_string(),
         }];
+        let credentials = vec![CredentialFinding {
+            service: "ssh".to_string(),
+            host: "10.0.0.1".to_string(),
+            user: "root".to_string(),
+            password: "toor".to_string(),
+        }];
 
         FindingsExport::write(
             &path,
@@ -117,6 +146,7 @@ mod tests {
             "ollama",
             &ports,
             &web_paths,
+            &credentials,
             &flags,
         )
         .unwrap();
@@ -126,5 +156,8 @@ mod tests {
         assert!(content.contains("Apache 2.4.52"));
         assert!(content.contains("/admin"));
         assert!(content.contains("MySQL exposed"));
+        assert!(content.contains("## Credentials"));
+        assert!(content.contains("root"));
+        assert!(content.contains("toor"));
     }
 }

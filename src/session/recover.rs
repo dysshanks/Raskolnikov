@@ -95,6 +95,7 @@ pub fn recover_session(session_dir: &Path) -> Result<(), String> {
         &provider,
         &ports,
         &web_paths,
+        &[],
         &flags,
     )
     .map_err(|e| format!("Failed to write findings: {}", e))?;

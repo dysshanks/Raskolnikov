@@ -11,4 +11,5 @@ target/
 *.tar.gz
 localhost-open-ports.txt
 nmap-result.txt
+"localhost_ports.txt"
 output/

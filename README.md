@@ -4,9 +4,9 @@ Terminal-native, markdown-driven AI security operating environment for authorise
 penetration testing and CTF competitions.
 
 You run `rsk`. A persistent agent shell opens. You talk to it in plain English.
-It reasons, plans, runs tools (nmap, gobuster, nikto, sqlmap), interprets output,
-and responds — whether you approve a step, change direction, or ask a question
-mid-session.
+It reasons, plans, runs tools (nmap, gobuster, nikto, sqlmap, hydra, whatweb,
+feroxbuster, john and more), interprets output, and responds — whether you
+approve a step, change direction, or ask a question mid-session.
 
 **Status: Alpha 0.1.0 — experimental, APIs and architecture may change.**
 
@@ -18,8 +18,9 @@ mid-session.
   agent plans and suggests tool commands, you approve or redirect.
 - **8 AI providers** — Ollama (local), Anthropic, OpenAI, Groq, OpenRouter, Nous,
   Llama API, Together. API keys from environment variables only.
-- **Tool integrations** — nmap, gobuster/ffuf, nikto, sqlmap parsing with
-  structured output extraction.
+- **Tool integrations** — nmap, gobuster/ffuf, nikto, sqlmap, hydra, whatweb,
+  feroxbuster, netexec, john, nuclei, enum4linux-ng, httpx and hashcat with
+  structured output extraction (ports, paths, credentials, cracked hashes).
 - **Ratatui TUI** — three-panel layout (tool output, conversation, findings),
   keyboard-driven, no mouse required.
 - **Session logging** — every session is written as JSON-lines (`session.log`)
@@ -40,8 +41,8 @@ docker run -it --rm ghcr.io/dysshanks/raskolnikov:latest
 ```
 
 Images are published to GitHub Container Registry for tagged releases (`latest`)
-and every push to main (`nightly`). The image bundles nmap, gobuster, nikto,
-and sqlmap.
+and every push to main (`nightly`). The image bundles the core security tools
+(nmap, gobuster, sqlmap, hydra, whatweb, john, hashcat).
 
 ### Nix
 
@@ -69,9 +70,11 @@ sudo ln -s raskolnikov /usr/local/bin/rk
 ```
 
 Dependencies at build time: Rust 1.80+ with `rustfmt` and `clippy` components.
-Runtime dependencies: `nmap`, `gobuster` (or `ffuf`), `nikto`, `sqlmap` — each
-tool is optional; missing tools are reported at startup. See
-`docs/TOOLS.md` for installation by distribution.
+Runtime dependencies: `nmap`, `gobuster` (or `ffuf`), `nikto`, `sqlmap`,
+`hydra`, `whatweb`, `john`, `hashcat` — each tool is optional; missing tools
+are reported at startup. CTF extras (`feroxbuster`, `netexec`, `nuclei`,
+`enum4linux-ng`, `httpx`) are best-effort. See `docs/TOOLS.md` for
+installation by distribution.
 
 ### Local AI with Ollama
 
@@ -226,7 +229,7 @@ src/
   agent/             Agent shell, engagement context, prompt builder
 ```
 
-See `docs/spec-mvp.md` for the full specification.
+Documentation lives in `docs/` — start with `docs/index.md`.
 
 ## License
 

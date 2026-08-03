@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added
+
+- **9 new tool integrations** — hydra, whatweb, feroxbuster, netexec, john,
+  nuclei, enum4linux-ng, httpx, and hashcat. Each with a structured output
+  parser, registered in the startup tool check.
+- **Credential findings** — `EngagementContext` now tracks credentials
+  (service, host, user, password) parsed from hydra/netexec/john/hashcat
+  output; exported as a `## Credentials` table in `findings.md`.
+- **Central output parsing** — `src/tools/parse.rs` dispatches tool output by
+  name into engagement context and returns tags for the findings bar.
+- **Output sanitization** — `src/tools/sanitize.rs` strips ANSI CSI/OSC
+  sequences and C0 control characters from tool output at the TUI boundary.
+- **Unified error type** — `src/error.rs` with a `thiserror` enum; config uses
+  `Result<T, crate::error::Error>`.
+- **Gated `/update`** — self-update only runs from a git checkout.
+- **Split documentation** — `docs/` reorganised into focused guides (USAGE,
+  INSTALLATION, CONFIGURATION, PROVIDERS, SESSIONS, TOOLS, CLI, ARCHITECTURE,
+  ROADMAP, SECURITY) with an index. Removed `spec-mvp.md` and `docs/plan/`.
+- **Packaging** — Docker image, AUR PKGBUILD, and `.deb` control now declare
+  the additional core tools.
+
+### Changed
+
+- **Command execution** — tool commands are tokenized with `shell-words`
+  (quoting-aware) and empty commands are rejected; processes run in their own
+  process group for reliable Ctrl+C interruption.
+- **Nuclei CVE tags** are normalised to uppercase.
+- **Tracing** is enabled via `RASKOLNIKOV_LOG` (RUST_LOG-style filter) instead
+  of always-on file logging.
+- **Module layout** — `src/tools/` grows `parse.rs` and `sanitize.rs`; the
+  modules remain flat and match `docs/ARCHITECTURE.md`.
+
 ### Fixed
 
 - **Conversation scrolling** — now line-based (wrapped line counts) instead of

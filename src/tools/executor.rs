@@ -5,20 +5,53 @@ use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::sync::watch;
 
-async fn terminate_child(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        if let Some(pid) = child.id() {
-            let _ = std::process::Command::new("kill")
-                .args(["-TERM", &pid.to_string()])
-                .spawn();
+/// Signals the tool's process group (the child and anything it spawned).
+/// Falls back to signalling just the child if it isn't the group leader.
+#[cfg(unix)]
+async fn terminate_group(child: &mut Child) {
+    let pid = child.id();
+    if let Some(pid) = pid {
+        let gid = unsafe { libc::getpgid(pid as libc::pid_t) };
+        let target = if gid > 0 && gid == pid as libc::pid_t {
+            -gid
+        } else {
+            pid as libc::pid_t
+        };
+        unsafe {
+            libc::kill(target, libc::SIGTERM);
         }
         tokio::select! {
             _ = child.wait() => return,
             _ = tokio::time::sleep(Duration::from_secs(5)) => {}
         }
+        unsafe {
+            libc::kill(target, libc::SIGKILL);
+        }
     }
     let _ = child.start_kill();
+}
+
+async fn terminate_child(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        terminate_group(child).await;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.start_kill();
+    }
+}
+
+/// Builds a tool Command that leads its own process group so interrupts can
+/// signal the whole tree.
+fn build_command(cmd: &str, args: &[&str]) -> Command {
+    let mut command = Command::new(cmd);
+    command.args(args);
+    #[cfg(unix)]
+    {
+        command.process_group(0);
+    }
+    command
 }
 
 pub struct ToolRunResult {
@@ -45,8 +78,7 @@ pub async fn run_tool(
         was_interrupted: false,
     };
 
-    let mut child: Child = match Command::new(cmd)
-        .args(args)
+    let mut child: Child = match build_command(cmd, args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -126,8 +158,7 @@ pub async fn run_tool_streaming(
         was_interrupted: false,
     };
 
-    let mut child: Child = match Command::new(cmd)
-        .args(args)
+    let mut child: Child = match build_command(cmd, args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -153,8 +184,9 @@ pub async fn run_tool_streaming(
         let mut lines = reader.lines();
         let mut acc = String::new();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_out.send(line.clone());
-            acc.push_str(&line);
+            let clean = crate::tools::sanitize::sanitize_output(&line);
+            let _ = tx_out.send(clean.clone());
+            acc.push_str(&clean);
             acc.push('\n');
         }
         acc
@@ -166,8 +198,9 @@ pub async fn run_tool_streaming(
         let mut lines = reader.lines();
         let mut acc = String::new();
         while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_err.send(format!("[stderr] {}", line));
-            acc.push_str(&line);
+            let clean = crate::tools::sanitize::sanitize_output(&line);
+            let _ = tx_err.send(format!("[stderr] {}", clean));
+            acc.push_str(&clean);
             acc.push('\n');
         }
         acc

@@ -3,6 +3,7 @@ pub struct EngagementContext {
     pub ports: Vec<Port>,
     pub web_paths: Vec<WebPath>,
     pub findings: Vec<Finding>,
+    pub credentials: Vec<Credential>,
     pub targets: Vec<String>,
 }
 
@@ -13,6 +14,14 @@ pub struct Port {
     pub state: String,
     pub service: String,
     pub version: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Credential {
+    pub service: String,
+    pub host: String,
+    pub user: String,
+    pub password: String,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +56,17 @@ impl EngagementContext {
         }
     }
 
+    pub fn add_credential(&mut self, credential: Credential) {
+        if !self.credentials.iter().any(|c| {
+            c.service == credential.service
+                && c.host == credential.host
+                && c.user == credential.user
+                && c.password == credential.password
+        }) {
+            self.credentials.push(credential);
+        }
+    }
+
     pub fn to_context_string(&self) -> String {
         let mut s = String::new();
 
@@ -74,6 +94,15 @@ impl EngagementContext {
             }
         }
 
+        if !self.credentials.is_empty() {
+            s.push_str("=== CREDENTIALS ===\n");
+            for c in &self.credentials {
+                s.push_str(&format!(
+                    "  {} {}:{}:{}\n",
+                    c.service, c.host, c.user, c.password
+                ));
+            }
+        }
         s
     }
 }

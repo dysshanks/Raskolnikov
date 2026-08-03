@@ -47,7 +47,7 @@ All session artifacts are markdown:
 
 - Transcripts are `.md` files (human-readable, diffable, embeddable in reports)
 - Findings are `.md` files (copy-paste into client reports, wiki pages, etc.)
-- The specification itself is a single `spec-mvp.md`
+- The docs themselves are split markdown files (see `docs/index.md`)
 
 Markdown is the universal interchange format for security work. No binary
 formats, no proprietary databases, no lock-in.

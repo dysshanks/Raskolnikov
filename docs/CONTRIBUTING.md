@@ -47,7 +47,7 @@ See [CLAUDE.md](../CLAUDE.md) for detailed conventions. Key points:
 - Each sub-module's `mod.rs` contains only `pub mod` declarations — no
   re-exports. Reference via full path: `crate::tools::nmap::NmapPort`.
 - Flat within each module — max 2 levels deep.
-- Module structure must match the Project Structure section in `docs/spec-mvp.md`.
+- Module structure must match the Module layout section in `docs/ARCHITECTURE.md`.
 
 ## Testing
 
@@ -71,13 +71,15 @@ See [CLAUDE.md](../CLAUDE.md) for detailed conventions. Key points:
 
 ## Spec
 
-`docs/spec-mvp.md` is the authoritative specification. Keep it in sync with the
-implementation. If you change behaviour, update the spec.
+`docs/ARCHITECTURE.md` documents the architecture. `docs/ROADMAP.md` tracks
+planned features. Keep them in sync with the implementation. If you change
+behaviour, update the relevant docs.
 
 ## Pull requests
 
 1. One feature or fix per PR — keep them small.
 2. Include tests for new functionality.
-3. Update `docs/spec-mvp.md` if the change affects documented behaviour.
+3. Update the affected docs in `docs/` if the change affects documented
+   behaviour.
 4. Update `docs/CHANGELOG.md` with the change.
 5. Ensure the full check suite passes before requesting review.

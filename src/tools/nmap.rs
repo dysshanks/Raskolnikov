@@ -96,11 +96,11 @@ pub fn parse_nmap_xml(xml: &str) -> Vec<NmapPort> {
     ports
 }
 
-pub fn build_nmap_command(target: &str, extra_flags: Option<&[&str]>) -> Vec<String> {
+pub fn build_nmap_command(target: &str, timing: u8, extra_flags: Option<&[&str]>) -> Vec<String> {
     let mut args = vec![
         "-sV".to_string(),
         "-sC".to_string(),
-        "-T4".to_string(),
+        format!("-T{}", timing),
         "-oX".to_string(),
         "-".to_string(),
     ];
@@ -167,8 +167,9 @@ mod tests {
 
     #[test]
     fn test_build_nmap_command() {
-        let args = build_nmap_command("10.0.0.1", Some(&["-p-"]));
+        let args = build_nmap_command("10.0.0.1", 3, Some(&["-p-"]));
         assert!(args.contains(&"-sV".to_string()));
+        assert!(args.contains(&"-T3".to_string()));
         assert!(args.contains(&"-p-".to_string()));
         assert!(args.contains(&"10.0.0.1".to_string()));
     }

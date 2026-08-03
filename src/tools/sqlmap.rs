@@ -53,6 +53,24 @@ pub fn parse_sqlmap_output(output: &str) -> Vec<SqlmapFinding> {
     findings
 }
 
+/// Builds a sqlmap command that never prompts, targets forms with a shallow
+/// crawl, and honours the configured level/risk.
+pub fn build_sqlmap_command(url: &str, level: u8, risk: u8) -> Vec<String> {
+    vec![
+        "-u".to_string(),
+        url.to_string(),
+        "--batch".to_string(),
+        "--crawl=2".to_string(),
+        "--level".to_string(),
+        level.to_string(),
+        "--risk".to_string(),
+        risk.to_string(),
+        "--threads".to_string(),
+        "4".to_string(),
+        "--forms".to_string(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +104,15 @@ Payload: username=' AND 1234=LIKE('ABCDEF','%')
 ";
         let findings = parse_sqlmap_output(output);
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_build_sqlmap_command() {
+        let args = build_sqlmap_command("http://host/page?id=1", 3, 2);
+        assert!(args.contains(&"--batch".to_string()));
+        assert!(args.contains(&"--crawl=2".to_string()));
+        assert!(args.contains(&"3".to_string()));
+        assert!(args.contains(&"2".to_string()));
+        assert!(args.contains(&"--forms".to_string()));
     }
 }

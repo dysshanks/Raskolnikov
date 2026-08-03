@@ -1,9 +1,7 @@
 use crate::ai::Message;
 use crate::session::transcript::TranscriptEntry;
-use crate::tools::executor::ToolRunResult;
 use crate::tui::app::{App, AppState};
 use chrono::Utc;
-use std::time::Duration;
 
 impl App {
     pub fn parse_tool_suggestion(&mut self, response: &str) {
@@ -45,8 +43,22 @@ impl App {
         self.conversation
             .push(format!("── Running: {} ──", command));
 
+        let parts: Vec<String> = shell_words::split(&command).unwrap_or_else(|e| {
+            self.conversation
+                .push(format!("[system] Could not parse command: {}", e));
+            Vec::new()
+        });
+
+        if parts.is_empty() {
+            self.conversation
+                .push("[system] Empty command, nothing to run.".to_string());
+            self.state = AppState::Idle;
+            return;
+        }
+
         let interrupt_rx = self.interrupt_tx.subscribe();
-        let cmd_clone = command.clone();
+        let cmd = parts[0].clone();
+        let args: Vec<String> = parts[1..].to_vec();
         let (tx, rx) = tokio::sync::oneshot::channel();
 
         let streaming = self.config.ui.stream_output;
@@ -55,40 +67,20 @@ impl App {
             self.tool_output_rx = Some(output_rx);
 
             tokio::spawn(async move {
-                let parts: Vec<&str> = cmd_clone.split_whitespace().collect();
-                let result = if parts.is_empty() {
-                    ToolRunResult {
-                        exit_code: Some(-1),
-                        stdout: String::new(),
-                        stderr: "Empty command".to_string(),
-                        duration: Duration::default(),
-                        was_interrupted: false,
-                    }
-                } else {
-                    crate::tools::executor::run_tool_streaming(
-                        parts[0],
-                        &parts[1..],
-                        interrupt_rx,
-                        output_tx,
-                    )
-                    .await
-                };
+                let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                let result = crate::tools::executor::run_tool_streaming(
+                    &cmd,
+                    &arg_refs,
+                    interrupt_rx,
+                    output_tx,
+                )
+                .await;
                 let _ = tx.send(result);
             });
         } else {
             tokio::spawn(async move {
-                let parts: Vec<&str> = cmd_clone.split_whitespace().collect();
-                let result = if parts.is_empty() {
-                    ToolRunResult {
-                        exit_code: Some(-1),
-                        stdout: String::new(),
-                        stderr: "Empty command".to_string(),
-                        duration: Duration::default(),
-                        was_interrupted: false,
-                    }
-                } else {
-                    crate::tools::executor::run_tool(parts[0], &parts[1..], interrupt_rx).await
-                };
+                let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                let result = crate::tools::executor::run_tool(&cmd, &arg_refs, interrupt_rx).await;
                 let _ = tx.send(result);
             });
         }
@@ -122,12 +114,14 @@ impl App {
         if !self.config.ui.stream_output {
             if !result.stdout.is_empty() {
                 for line in result.stdout.lines() {
-                    self.conversation.push(format!("│ {}", line));
+                    let clean = crate::tools::sanitize::sanitize_output(line);
+                    self.conversation.push(format!("│ {}", clean));
                 }
             }
             if !result.stderr.is_empty() {
                 for line in result.stderr.lines() {
-                    self.conversation.push(format!("│ [stderr] {}", line));
+                    let clean = crate::tools::sanitize::sanitize_output(line);
+                    self.conversation.push(format!("│ [stderr] {}", clean));
                 }
             }
         }
@@ -173,6 +167,29 @@ impl App {
                 tool, code, secs, output
             );
             self.messages.push(Message::tool(output_msg, &tool));
+
+            let tags = crate::tools::parse::parse_tool_output(
+                &tool,
+                &output,
+                &mut self.agent_shell.context,
+            );
+            if !tags.is_empty() {
+                let mut added = 0;
+                for tag in &tags {
+                    if !self.findings.iter().any(|f| f == tag) {
+                        self.findings.push(tag.clone());
+                        self.conversation.push(format!("[finding] {}", tag));
+                        added += 1;
+                    }
+                }
+                if added > 0 {
+                    self.toast = Some((
+                        format!("{} finding(s) parsed", added),
+                        std::time::Instant::now(),
+                    ));
+                }
+            }
+
             self.state = AppState::Idle;
             self.processing = true;
         }
@@ -255,11 +272,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_spawn_empty_parts_uses_pending_tool() {
+    async fn test_spawn_empty_command_noop() {
         let mut app = make_test_app();
         app.pending_tool = Some("custom".to_string());
         app.spawn_tool("".to_string());
-        assert!(app.tool_rx.is_some() || app.state == AppState::ToolRunning);
+        assert_eq!(app.state, AppState::Idle);
+        assert!(app.tool_rx.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_spawn_tool_parses_quoted_args() {
+        let mut app = make_test_app();
+        app.pending_tool = Some("gobuster".to_string());
+        app.spawn_tool("gobuster dir -u http://host -w \"/path with spaces/list.txt\"".to_string());
+        assert_eq!(app.state, AppState::ToolRunning);
+        assert!(app.tool_rx.is_some());
     }
 
     fn make_test_app() -> App {

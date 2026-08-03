@@ -8,7 +8,7 @@ Homepage: https://github.com/dysshanks/Raskolnikov
 
 Package: raskolnikov
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, nmap, gobuster, nikto, sqlmap
+Depends: ${shlibs:Depends}, ${misc:Depends}, nmap, gobuster, nikto, sqlmap, hydra, whatweb, john, hashcat
 Description: Terminal-native AI security operating environment
  Raskolnikov is a terminal-native, markdown-driven AI security
  operating environment for authorised penetration testing and CTF

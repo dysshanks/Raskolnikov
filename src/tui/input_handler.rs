@@ -508,7 +508,7 @@ mod tests {
         let mut app = make_app();
         app.input = "/find".to_string();
         app.update_command_filter();
-        assert!(app.filtered_commands.len() > 0);
+        assert!(!app.filtered_commands.is_empty());
         let idx = app.filtered_commands[0];
         assert_eq!(COMMANDS[idx].name, "/findings <tag>");
     }

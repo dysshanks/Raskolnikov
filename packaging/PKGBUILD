@@ -12,6 +12,10 @@ depends=(
   'gobuster'
   'nikto'
   'sqlmap'
+  'hydra'
+  'whatweb'
+  'john'
+  'hashcat'
 )
 makedepends=('cargo' 'rust')
 provides=('raskolnikov' 'rsk' 'rk')

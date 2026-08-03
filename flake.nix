@@ -44,6 +44,15 @@
             pkgs.gobuster
             pkgs.nikto
             pkgs.sqlmap
+            pkgs.hydra
+            pkgs.whatweb
+            pkgs.feroxbuster
+            pkgs.netexec
+            pkgs.john
+            pkgs.nuclei
+            pkgs.enum4linux-ng
+            pkgs.httpx
+            pkgs.hashcat
           ];
           shellHook = ''
             echo "Raskolnikov dev shell"

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+pub type Result<T> = std::result::Result<T, crate::error::Error>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -394,13 +394,7 @@ fn config_path() -> PathBuf {
 }
 
 pub fn data_dir() -> PathBuf {
-    if let Ok(path) = std::env::var("RASKOLNIKOV_DATA") {
-        return PathBuf::from(path);
-    }
-    if let Some(home) = home_dir() {
-        return home.join(".local/share/raskolnikov");
-    }
-    PathBuf::from("/tmp/raskolnikov")
+    data_dir_for_config(&Config::default())
 }
 
 pub fn data_dir_for_config(config: &Config) -> PathBuf {
@@ -458,24 +452,7 @@ pub fn save(config: &Config) -> Result<()> {
 }
 
 pub fn init_data_dirs() -> Result<PathBuf> {
-    let dir = data_dir();
-
-    let sessions_dir = dir.join("sessions");
-    std::fs::create_dir_all(&sessions_dir)
-        .map_err(|e| format!("Failed to create sessions directory: {}", e))?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(metadata) = std::fs::metadata(&dir) {
-            let perm = metadata.permissions();
-            if perm.mode() & 0o077 != 0 {
-                std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok();
-            }
-        }
-    }
-
-    Ok(dir)
+    init_data_dirs_for(&Config::default())
 }
 
 pub fn init_data_dirs_for(config: &Config) -> Result<PathBuf> {
@@ -577,8 +554,10 @@ nmap_timing = 3
 
     #[test]
     fn test_data_dir_for_config_use_tmp() {
-        let mut config = Config::default();
-        config.use_tmp_data_dir = true;
+        let config = Config {
+            use_tmp_data_dir: true,
+            ..Config::default()
+        };
         let dir = data_dir_for_config(&config);
         assert!(dir.to_string_lossy().contains("raskolnikov"));
         assert!(dir.parent().unwrap().to_string_lossy().contains("tmp"));
@@ -598,8 +577,10 @@ nmap_timing = 3
 
     #[test]
     fn test_data_dir_for_config_env_overrides_tmp() {
-        let mut config = Config::default();
-        config.use_tmp_data_dir = true;
+        let config = Config {
+            use_tmp_data_dir: true,
+            ..Config::default()
+        };
         temp_env::with_vars(
             vec![("RASKOLNIKOV_DATA", Some("/tmp/env-override"))],
             || {

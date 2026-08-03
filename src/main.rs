@@ -71,6 +71,7 @@ enum ConfigAction {
 
 #[tokio::main]
 async fn main() -> raskolnikov::config::Result<()> {
+    init_tracing();
     let args = Args::parse();
 
     if args.version {
@@ -377,4 +378,18 @@ fn handle_tools() -> raskolnikov::config::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Initialises tracing. Writes to stderr when `RASKOLNIKOV_LOG` is set to a
+/// RUST_LOG-style filter, otherwise stays quiet (no file, no noise).
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    if std::env::var_os("RASKOLNIKOV_LOG").is_some() {
+        let filter =
+            EnvFilter::try_from_env("RASKOLNIKOV_LOG").unwrap_or_else(|_| EnvFilter::new("warn"));
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_writer(std::io::stderr)
+            .try_init();
+    }
 }

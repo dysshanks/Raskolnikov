@@ -474,6 +474,15 @@ impl App {
 
         if trimmed == "/update" || trimmed == "/update tools" {
             let update_tools = trimmed == "/update tools";
+
+            if !std::path::Path::new(".git").exists() {
+                self.conversation.push(
+                    "[system] Update unavailable: not a git checkout. Pull and rebuild manually."
+                        .to_string(),
+                );
+                return;
+            }
+
             self.conversation
                 .push("[system] Starting update...".to_string());
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -597,7 +606,7 @@ impl App {
                             &tx,
                             Command::new("sh").args([
                                 "-c",
-                                "sudo apt-get update && sudo apt-get install -y nmap gobuster nikto sqlmap",
+                                "sudo apt-get update && sudo apt-get install -y nmap gobuster nikto sqlmap hydra whatweb john hashcat",
                             ]),
                         )
                         .await;
@@ -610,7 +619,7 @@ impl App {
                     #[cfg(target_os = "macos")]
                     {
                         let _ = tx
-                            .send("Please update tools manually via Homebrew: brew upgrade nmap gobuster nikto sqlmap"
+                            .send("Please update tools manually via Homebrew: brew upgrade nmap gobuster nikto sqlmap hydra whatweb john hashcat"
                                 .to_string());
                     }
                 }
@@ -658,7 +667,7 @@ impl App {
         let (needs_summary, total_tokens, ratio) =
             crate::ai::check_context(&self.messages, context_window);
         if needs_summary {
-            let summarised = crate::ai::summarise_context(&mut self.messages);
+            let summarised = crate::ai::summarise_context(&mut self.messages, 4);
             if summarised > 0 {
                 let pct = (ratio * 100.0) as u32;
                 let warning = format!(
@@ -741,6 +750,41 @@ impl App {
         );
 
         let date = Utc::now().format("%Y-%m-%d").to_string();
+        let ports: Vec<crate::session::findings::PortFinding> = self
+            .agent_shell
+            .context
+            .ports
+            .iter()
+            .map(|p| crate::session::findings::PortFinding {
+                port: p.port,
+                protocol: p.protocol.clone(),
+                service: p.service.clone(),
+                version: p.version.clone(),
+            })
+            .collect();
+        let web_paths: Vec<crate::session::findings::WebPathFinding> = self
+            .agent_shell
+            .context
+            .web_paths
+            .iter()
+            .map(|p| crate::session::findings::WebPathFinding {
+                path: p.path.clone(),
+                status_code: p.status_code,
+                notes: p.notes.clone(),
+            })
+            .collect();
+        let credentials: Vec<crate::session::findings::CredentialFinding> = self
+            .agent_shell
+            .context
+            .credentials
+            .iter()
+            .map(|c| crate::session::findings::CredentialFinding {
+                service: c.service.clone(),
+                host: c.host.clone(),
+                user: c.user.clone(),
+                password: c.password.clone(),
+            })
+            .collect();
         let flags: Vec<crate::session::findings::FlagFinding> = self
             .findings
             .iter()
@@ -753,8 +797,9 @@ impl App {
             &date,
             &self.model_name,
             &self.provider_name,
-            &[],
-            &[],
+            &ports,
+            &web_paths,
+            &credentials,
             &flags,
         );
 
