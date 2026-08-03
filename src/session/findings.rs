@@ -42,6 +42,7 @@ impl FindingsExport {
         web_paths: &[WebPathFinding],
         credentials: &[CredentialFinding],
         flags: &[FlagFinding],
+        targets: &[String],
     ) -> Result<(), std::io::Error> {
         let mut md = String::new();
         md.push_str("# Findings\n");
@@ -97,6 +98,14 @@ impl FindingsExport {
             md.push('\n');
         }
 
+        if !targets.is_empty() {
+            md.push_str("## Discovered Targets\n");
+            for t in targets {
+                md.push_str(&format!("- {}\n", t));
+            }
+            md.push('\n');
+        }
+
         fs::write(path, md)
     }
 }
@@ -138,6 +147,7 @@ mod tests {
             user: "root".to_string(),
             password: "toor".to_string(),
         }];
+        let targets = vec!["sub.example.com".to_string()];
 
         FindingsExport::write(
             &path,
@@ -148,6 +158,7 @@ mod tests {
             &web_paths,
             &credentials,
             &flags,
+            &targets,
         )
         .unwrap();
 
@@ -159,5 +170,7 @@ mod tests {
         assert!(content.contains("## Credentials"));
         assert!(content.contains("root"));
         assert!(content.contains("toor"));
+        assert!(content.contains("## Discovered Targets"));
+        assert!(content.contains("sub.example.com"));
     }
 }

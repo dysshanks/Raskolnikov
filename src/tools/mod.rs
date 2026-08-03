@@ -1,3 +1,4 @@
+pub mod dnsx;
 pub mod enum4linux;
 pub mod executor;
 pub mod feroxbuster;
@@ -5,15 +6,22 @@ pub mod gobuster;
 pub mod hashcat;
 pub mod httpx;
 pub mod hydra;
+pub mod impacket;
 pub mod john;
+pub mod masscan;
+pub mod nbtscan;
 pub mod netexec;
 pub mod nikto;
 pub mod nmap;
 pub mod nuclei;
 pub mod parse;
 pub mod sanitize;
+pub mod smbclient;
+pub mod smbmap;
 pub mod sqlmap;
+pub mod subfinder;
 pub mod whatweb;
+pub mod wpscan;
 
 use std::process::Command;
 
@@ -99,6 +107,7 @@ pub fn check_all_tools() -> Vec<ToolInfo> {
     vec![
         check_tool("nmap", "--version"),
         check_tool("gobuster", "--version"),
+        check_tool("ffuf", "-V"),
         check_tool("nikto", "-Version"),
         check_tool("sqlmap", "--version"),
         check_tool("hydra", "-h"),
@@ -113,6 +122,21 @@ pub fn check_all_tools() -> Vec<ToolInfo> {
             &[("httpx", "-version"), ("httpx-toolkit", "-version")],
         ),
         check_tool("hashcat", "--version"),
+        check_tool("smbclient", "-V"),
+        check_tool("smbmap", "-h"),
+        check_tool("wpscan", "--version"),
+        check_tool("masscan", "--version"),
+        check_tool("nbtscan", "-v"),
+        check_tool("dnsx", "-version"),
+        check_tool("subfinder", "-version"),
+        check_tool_aliases(
+            "impacket",
+            &[
+                ("secretsdump.py", "-h"),
+                ("GetNPUsers.py", "-h"),
+                ("GetUserSPNs.py", "-h"),
+            ],
+        ),
     ]
 }
 

@@ -4,6 +4,13 @@
 
 ### Added
 
+- **9 more tool integrations** — ffuf (detection; parser already existed),
+  smbclient, smbmap, wpscan, masscan, nbtscan, dnsx, subfinder, and impacket
+  (GetNPUsers / GetUserSPNs / secretsdump). Each with a best-effort output
+  parser feeding engagement context.
+- **Discovered targets** — DNS/subdomain/host discovery results from dnsx,
+  subfinder, nbtscan and masscan now surface in the `=== DISCOVERED TARGETS ===`
+  prompt section and a `## Discovered Targets` section in `findings.md`.
 - **9 new tool integrations** — hydra, whatweb, feroxbuster, netexec, john,
   nuclei, enum4linux-ng, httpx, and hashcat. Each with a structured output
   parser, registered in the startup tool check.

@@ -792,6 +792,7 @@ impl App {
                 description: f.clone(),
             })
             .collect();
+        let targets = self.agent_shell.context.targets.clone();
         let _ = crate::session::findings::FindingsExport::write(
             &findings_path,
             &date,
@@ -801,6 +802,7 @@ impl App {
             &web_paths,
             &credentials,
             &flags,
+            &targets,
         );
 
         let tools_dir = self.session_dir.join("tools");

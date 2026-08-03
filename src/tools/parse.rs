@@ -195,10 +195,82 @@ pub fn parse_tool_output(tool: &str, output: &str, context: &mut EngagementConte
                 tags.push(desc);
             }
         }
+        "impacket" | "secretsdump" | "secretsdump.py" | "GetNPUsers.py" | "GetNPUsers"
+        | "GetUserSPNs.py" | "GetUserSPNs" => {
+            for cred in crate::tools::impacket::parse_impacket_output(output) {
+                context.add_credential(Credential {
+                    service: cred.service.clone(),
+                    host: String::new(),
+                    user: cred.user.clone(),
+                    password: cred.secret.clone(),
+                });
+                tags.push(format!("{} {}:{}", cred.service, cred.user, cred.secret));
+            }
+        }
+        "smbclient" => {
+            for share in crate::tools::smbclient::parse_smbclient_shares(output) {
+                let desc = format!("SMB share {} ({})", share.name, share.share_type);
+                context.add_finding(desc.clone(), "smbclient".to_string());
+                tags.push(desc);
+            }
+        }
+        "smbmap" => {
+            for share in crate::tools::smbmap::parse_smbmap_output(output) {
+                let desc = format!("SMB share {} ({})", share.name, share.share_type);
+                context.add_finding(desc.clone(), "smbmap".to_string());
+                tags.push(desc);
+            }
+        }
+        "wpscan" => {
+            for finding in crate::tools::wpscan::parse_wpscan_output(output) {
+                context.add_finding(finding.detail.clone(), "wpscan".to_string());
+                tags.push(finding.detail);
+            }
+        }
+        "masscan" => {
+            for port in crate::tools::masscan::parse_masscan_output(output) {
+                let exists = context
+                    .ports
+                    .iter()
+                    .any(|p| p.port == port.port && p.protocol == port.protocol);
+                if !exists {
+                    context.ports.push(port.clone());
+                    tags.push(format!("{}/{}", port.port, port.protocol));
+                }
+            }
+        }
+        "nbtscan" => {
+            for nb in crate::tools::nbtscan::parse_nbtscan_output(output) {
+                context.add_finding(
+                    format!("NetBIOS name {} ({})", nb.name, nb.ip),
+                    "nbtscan".to_string(),
+                );
+                add_target(context, &nb.name);
+                tags.push(format!("{} {}", nb.name, nb.ip));
+            }
+        }
+        "dnsx" => {
+            for host in crate::tools::dnsx::parse_dnsx_output(output) {
+                add_target(context, &host);
+                tags.push(host);
+            }
+        }
+        "subfinder" => {
+            for host in crate::tools::subfinder::parse_subfinder_output(output) {
+                add_target(context, &host);
+                tags.push(host);
+            }
+        }
         _ => {}
     }
 
     tags
+}
+
+fn add_target(context: &mut EngagementContext, host: &str) {
+    if !context.targets.iter().any(|t| t == host) {
+        context.targets.push(host.to_string());
+    }
 }
 
 #[cfg(test)]
@@ -270,5 +342,48 @@ mod tests {
         let mut ctx = EngagementContext::new();
         let tags = parse_tool_output("sqlmap", "!!! not sqlmap output !!!", &mut ctx);
         assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn test_parse_masscan_populates_ports() {
+        let mut ctx = EngagementContext::new();
+        let tags = parse_tool_output("masscan", "open tcp 80 10.0.0.1 1600000000", &mut ctx);
+        assert_eq!(ctx.ports.len(), 1);
+        assert_eq!(ctx.ports[0].port, 80);
+        assert!(!tags.is_empty());
+    }
+
+    #[test]
+    fn test_parse_impacket_populates_credentials() {
+        let mut ctx = EngagementContext::new();
+        let tags = parse_tool_output(
+            "GetNPUsers.py",
+            "$krb5asrep$23$svc@CORP.LOCAL:f5d3f4b2a1c8e9d0deadbeef12345678",
+            &mut ctx,
+        );
+        assert_eq!(ctx.credentials.len(), 1);
+        assert_eq!(ctx.credentials[0].user, "svc");
+        assert!(!tags.is_empty());
+    }
+
+    #[test]
+    fn test_parse_smbclient_populates_findings() {
+        let mut ctx = EngagementContext::new();
+        let tags = parse_tool_output(
+            "smbclient",
+            "\tSharename       Type      Comment\n\tPublic          Disk\n",
+            &mut ctx,
+        );
+        assert_eq!(ctx.findings.len(), 1);
+        assert!(ctx.findings[0].description.contains("Public"));
+        assert!(!tags.is_empty());
+    }
+
+    #[test]
+    fn test_parse_dnsx_populates_targets() {
+        let mut ctx = EngagementContext::new();
+        let tags = parse_tool_output("dnsx", "sub.example.com [1.2.3.4]\n", &mut ctx);
+        assert_eq!(ctx.targets, vec!["sub.example.com".to_string()]);
+        assert!(!tags.is_empty());
     }
 }

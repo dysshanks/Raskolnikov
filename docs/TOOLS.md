@@ -27,7 +27,15 @@ the agent simply skips steps that need them when absent.
 | netexec | SMB/AD enumeration and credential validation | `nxc --version` / `netexec --version` | Optional |
 | nuclei | Template-based vulnerability scanning | `nuclei -version` | Optional |
 | enum4linux-ng | SMB/Windows enumeration (users, shares, sessions) | `enum4linux-ng -h` | Optional |
-| httpx | Fast HTTP probing at scale | `httpx -version` | Optional |
+| httpx | Fast HTTP probing at scale | `httpx -version` / `httpx-toolkit -version` (Arch) | Optional |
+| smbclient | SMB share listing | `smbclient -V` | Optional |
+| smbmap | SMB share + permission enumeration | `smbmap -h` | Optional |
+| wpscan | WordPress vulnerability scanner | `wpscan --version` | Optional |
+| masscan | Fast port scanning | `masscan --version` | Optional |
+| nbtscan | NetBIOS name enumeration | `nbtscan -v` | Optional |
+| dnsx | DNS resolution/probing | `dnsx -version` | Optional |
+| subfinder | Subdomain enumeration | `subfinder -version` | Optional |
+| impacket | AD attacks: GetNPUsers, GetUserSPNs, secretsdump | `secretsdump.py -h` / `GetNPUsers.py -h` | Optional |
 
 "Core" tools are declared as package dependencies where the distro provides
 them. "Optional" tools are best-effort — install them manually or via the
@@ -36,26 +44,29 @@ tools' own package managers (Kali provides all of them).
 ## Arch Linux
 
 ```bash
-sudo pacman -S nmap gobuster nikto sqlmap hydra whatweb john hashcat
+sudo pacman -S nmap gobuster nikto sqlmap hydra whatweb john hashcat smbclient smbmap wpscan masscan nbtscan impacket
 ```
 
-Optional tools (AUR):
+Optional tools (AUR / go install):
 
 ```bash
 yay -S ffuf feroxbuster netexec nuclei httpx enum4linux-ng
+go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 ```
 
 ## Kali / Debian / Ubuntu
 
 ```bash
 sudo apt update
-sudo apt install nmap gobuster nikto sqlmap hydra whatweb john hashcat
+sudo apt install nmap gobuster nikto sqlmap hydra whatweb john hashcat smbclient smbmap wpscan masscan nbtscan
 ```
 
 On Kali, the remaining tools are available directly:
 
 ```bash
-sudo apt install feroxbuster netexec nuclei httpx enum4linux-ng ffuf
+sudo apt install feroxbuster netexec nuclei httpx enum4linux-ng ffuf dnsx subfinder
+sudo pipx install netexec
 ```
 
 On stock Debian/Ubuntu, install the Optional tools from their upstream releases
@@ -64,21 +75,21 @@ On stock Debian/Ubuntu, install the Optional tools from their upstream releases
 ## Fedora
 
 ```bash
-sudo dnf install nmap gobuster nikto sqlmap hydra whatweb john hashcat
-sudo dnf install ffuf feroxbuster nuclei httpx enum4linux-ng netexec
+sudo dnf install nmap gobuster nikto sqlmap hydra whatweb john hashcat smbclient wpscan masscan nbtscan
+sudo dnf install ffuf feroxbuster nuclei httpx enum4linux-ng netexec subfinder
 ```
 
 ## macOS (Homebrew)
 
 ```bash
-brew install nmap gobuster nikto sqlmap hydra whatweb john hashcat
-brew install feroxbuster netexec nuclei httpx enum4linux-ng ffuf
+brew install nmap gobuster nikto sqlmap hydra whatweb john hashcat smbclient wpscan masscan
+brew install feroxbuster netexec nuclei httpx enum4linux-ng ffuf dnsx subfinder impacket
 ```
 
 ## NixOS
 
 ```bash
-nix-shell -p nmap gobuster nikto sqlmap hydra whatweb john hashcat feroxbuster netexec nuclei enum4linux-ng httpx ffuf
+nix-shell -p nmap gobuster nikto sqlmap hydra whatweb john hashcat feroxbuster netexec nuclei enum4linux-ng httpx ffuf smbclient wpscan masscan nbtscan dnsx subfinder impacket
 ```
 
 Or add to your `configuration.nix`:
@@ -87,6 +98,7 @@ Or add to your `configuration.nix`:
 environment.systemPackages = with pkgs; [
   nmap gobuster nikto sqlmap hydra whatweb john hashcat
   feroxbuster netexec nuclei enum4linux-ng httpx ffuf
+  smbclient wpscan masscan nbtscan dnsx subfinder impacket
 ];
 ```
 
@@ -127,6 +139,16 @@ python3 -m pipx install netexec
 # enum4linux-ng (Python required)
 git clone https://github.com/cddmp/enum4linux-ng
 sudo ln -s $PWD/enum4linux-ng/enum4linux-ng.py /usr/local/bin/enum4linux-ng
+
+# dnsx / subfinder (Go required, ProjectDiscovery)
+go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+
+# impacket (Python required — GetNPUsers.py, secretsdump.py, etc.)
+git clone https://github.com/fortra/impacket
+cd impacket
+sudo python3 setup.py install
+# or via pip: pip3 install --user impacket
 ```
 
 ## Docker
@@ -135,5 +157,5 @@ The published image bundles the Core tools (nmap, gobuster, sqlmap, hydra,
 whatweb, john, hashcat). Install Optional tools inside a container with:
 
 ```bash
-docker exec -it <container> apt-get install -y feroxbuster netexec nuclei httpx enum4linux-ng
+docker exec -it <container> apt-get install -y feroxbuster netexec nuclei httpx enum4linux-ng smbclient smbmap wpscan masscan nbtscan
 ```

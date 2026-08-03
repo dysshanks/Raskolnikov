@@ -103,6 +103,13 @@ impl EngagementContext {
                 ));
             }
         }
+
+        if !self.targets.is_empty() {
+            s.push_str("=== DISCOVERED TARGETS ===\n");
+            for t in &self.targets {
+                s.push_str(&format!("  {}\n", t));
+            }
+        }
         s
     }
 }
